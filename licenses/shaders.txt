@@ -24,4 +24,15 @@ Slot GLES2 ports of multi-pass shaders are approximations until pixel parity
 is validated on KONKR. Preset parameter values are preserved.
 Source: https://github.com/libretro/glsl-shaders/tree/master/handheld
 
+Pixel Transparency v2.3 by mattakins, Copyright (C) 2025-2026 Matt Akins.
+https://github.com/mattakins/Pixel_Transparency
+Ported to GLES2 as the last step of slot.'s game pass, after the screen
+shader. Same arithmetic and parameters; the preset's defaults
+(pixel_transparency.slangp). Changes: the two blur shortcuts
+(collapseShadowAxis) are left out, as they only speed up the same result;
+the debug and note parameters are left out; the shadow offset, motion
+included, is computed on the CPU from the accelerometer.
+License: the upstream repository does not state one. To be confirmed with
+the author before release.
+
 slot itself is GNU General Public License version 3 or later, which these licenses permit.

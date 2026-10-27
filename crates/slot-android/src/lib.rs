@@ -4,6 +4,8 @@
 mod library;
 mod cart_disk_cache;
 mod settings;
+// Pixel Transparency (mattakins): settings and menu pages for the shader.
+mod pixel_transparency;
 mod recents;
 mod favorites;
 mod selection;

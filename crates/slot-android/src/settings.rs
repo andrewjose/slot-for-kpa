@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io, path::Path};
 use slot_gfx::ScreenEffect;
 use slot_store::GbPalette;
+use crate::pixel_transparency::PtParams;
 
 /// Matches Slot v1.7.0's canonical WallpaperPick semantics, while storing
 /// the user's choice in the existing Android JSON settings file.
@@ -238,6 +239,12 @@ pub struct Settings {
     /// Slot v1.7 GENERAL: Recents is off by default; persist its list regardless.
     pub show_recents: bool,
     pub show_titles: bool,
+    /// Pixel Transparency after the screen shader, ON/OFF per system; one
+    /// shared set of shader parameters. Absent in older files: OFF.
+    pub pixel_transparency_gba: bool,
+    pub pixel_transparency_gbc: bool,
+    pub pixel_transparency_gb: bool,
+    pub pixel_transparency: PtParams,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -258,7 +265,10 @@ impl Default for Settings {
             time_format: TimeFormat::TwentyFourHour,
             status_opt_in_v2: true, wallpaper: WallpaperPick::Default,
             wallpaper_tint: WallpaperTint::Off, appearance: Appearance::Dark,
-            show_recents: false, show_titles: false }
+            show_recents: false, show_titles: false,
+            pixel_transparency_gba: false, pixel_transparency_gbc: false,
+            pixel_transparency_gb: false,
+            pixel_transparency: PtParams::default() }
     }
 }
 impl Settings {
@@ -327,6 +337,7 @@ impl Settings {
                 if s.gb_palette >= 48 { s.gb_palette = 1; }
                 if !REWIND_SPEEDS.contains(&s.rewind_speed) { s.rewind_speed = 2; }
                 if s.run_ahead_frames > 2 { s.run_ahead_frames = 0; }
+                s.pixel_transparency = s.pixel_transparency.sanitize();
                 // Before this version all three toggles defaulted ON.
                 // A previously written settings file therefore isn't proof
                 // that the user chose to permit status probing. One-time
@@ -359,6 +370,20 @@ impl Settings {
             slot_store::Platform::Gba=>self.shader_gba=shader,
             slot_store::Platform::Gbc=>self.shader_gbc=shader,
             slot_store::Platform::Gb=>self.shader_gb=shader,
+        }
+    }
+    pub fn pixel_transparency_for(&self,platform:slot_store::Platform)->bool {
+        match platform {
+            slot_store::Platform::Gba=>self.pixel_transparency_gba,
+            slot_store::Platform::Gbc=>self.pixel_transparency_gbc,
+            slot_store::Platform::Gb=>self.pixel_transparency_gb,
+        }
+    }
+    pub fn set_pixel_transparency_for(&mut self,platform:slot_store::Platform,on:bool) {
+        match platform {
+            slot_store::Platform::Gba=>self.pixel_transparency_gba=on,
+            slot_store::Platform::Gbc=>self.pixel_transparency_gbc=on,
+            slot_store::Platform::Gb=>self.pixel_transparency_gb=on,
         }
     }
     pub fn colour_for(&self,platform:slot_store::Platform)->bool {
@@ -394,7 +419,7 @@ impl Settings {
     }
     // Screen: 0 GBA shader, 1 GB shader, 2 legacy GBA correction, 3 palettes.
     // 21 GBC shader, 22/23/24 independent corrections, 25/26/27 bezels.
-    // Gameplay: keys 4..9.
+    // Gameplay: keys 4..9. 32/33/34 GBA/GBC/GB Pixel Transparency.
     // Faithful to Slot quick_menu.rs except Date & Time (owned by Android).
     pub fn change(&mut self, key: usize, right: bool) -> bool {
         let before = self.clone();
@@ -429,6 +454,9 @@ impl Settings {
             14 => self.show_bluetooth = !self.show_bluetooth,
             15 => self.show_integrations = !self.show_integrations,
             28 => self.time_format = self.time_format.toggle(),
+            32 => self.pixel_transparency_gba = !self.pixel_transparency_gba,
+            33 => self.pixel_transparency_gbc = !self.pixel_transparency_gbc,
+            34 => self.pixel_transparency_gb = !self.pixel_transparency_gb,
             _ => return false,
         }
         *self != before
@@ -516,6 +544,41 @@ mod tests {
         for clock in ["", "invalid", "24:00", "12:60"] {
             assert_eq!(TimeFormat::TwelveHour.format_clock(clock), clock);
         }
+    }
+
+    #[test]
+    fn pixel_transparency_is_off_until_chosen_and_per_system() {
+        let legacy: Settings = serde_json::from_str(r#"{"shader_gbc":"lcd3x"}"#).unwrap();
+        for platform in slot_store::Platform::ALL {
+            assert!(!legacy.pixel_transparency_for(platform));
+            assert!(!Settings::first_install_defaults().pixel_transparency_for(platform));
+        }
+        assert_eq!(legacy.pixel_transparency, PtParams::default());
+        let mut s = legacy;
+        assert!(s.change(33, true));
+        assert!(s.pixel_transparency_for(slot_store::Platform::Gbc));
+        assert!(!s.pixel_transparency_for(slot_store::Platform::Gba));
+        assert!(!s.pixel_transparency_for(slot_store::Platform::Gb));
+        assert!(s.change(32, false) && s.change(34, true));
+        assert!(s.pixel_transparency_gba && s.pixel_transparency_gb);
+    }
+
+    #[test]
+    fn pixel_transparency_values_load_back_in_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Settings {
+            pixel_transparency_gbc: true,
+            pixel_transparency: PtParams { transparency: 35, ..Default::default() },
+            ..Default::default()
+        };
+        s.save(dir.path()).unwrap();
+        let loaded = Settings::load(dir.path());
+        assert!(loaded.pixel_transparency_gbc);
+        assert_eq!(loaded.pixel_transparency.transparency, 35);
+        std::fs::write(dir.path().join(NAME),
+            br#"{"pixel_transparency":{"transparency":900,"shadow_blur":-4}}"#).unwrap();
+        let fixed = Settings::load(dir.path()).pixel_transparency;
+        assert_eq!((fixed.transparency, fixed.shadow_blur), (100, 0));
     }
 
     #[test]

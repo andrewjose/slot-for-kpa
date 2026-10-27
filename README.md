@@ -50,6 +50,7 @@ Built specifically for the KONKR Pocket Advance
 - **Multiplayer on Android** — Play compatible games over local Wi-Fi using mGBA Link Cable or gpSP Link Cable / Wireless RFU.
 - **More GBA shaders** — Ten selectable GBA shader presets plus Off, including LCD3x, LCD Grid, Dot and display styles inspired by the original GBA and GBA SP.
 - **Independent system settings** — Configure the default core, shader, color correction and bezel of GBA, GB and GBC separately in **START → Settings → Systems**.
+- **Pixel Transparency** — [mattakins' Pixel Transparency](https://github.com/mattakins/Pixel_Transparency) on top of any screen shader: light pixels let the screen's backing show through, as on an unlit Game Boy Color, with drop shadows that can follow the tilt of your handheld. All of its parameters can be adjusted from the menu ([details](#pixel-transparency)).
 - **Game Boy screen sizes and overlays** — Integer, Original Ratio or Stretch for GB and GBC games, with Game Boy, Game Boy Pocket and Game Boy Color overlays.
 - **Optimized cartridge browsing** — Background artwork loading, persistent caching and GPU texture management designed to keep large libraries responsive.
 - **Android app launcher** — Launch your other Android apps directly from Slot, with the option to make Slot your HOME launcher.
@@ -146,6 +147,18 @@ The KONKR's round top button is called **slot. cap** in this port. Since it cont
 
 **Note:** Unlike the original slot., this Android port uses **START** to open the main menu and **SELECT** to choose the emulator core on the carousel.
 
+## Pixel Transparency
+
+On an unlit Game Boy Color or Game Boy Advance, white pixels weren't white: they let the backing of the screen show through, and the picture cast a small shadow on it. [Pixel Transparency](https://github.com/mattakins/Pixel_Transparency) by mattakins recreates this, so bright backgrounds stop glaring. slot. applies it after the selected shader, so it works with every shader, or with none.
+
+- **Turn it on per system** in **START → Settings → Systems**, on the **Pixel Transparency** row (<kbd>←</kbd> / <kbd>→</kbd>). It is off by default.
+- **Turn it on or off for one game** in the pause menu's **Settings → Screen**.
+- **Adjust it** by pressing <kbd>A</kbd> on the **Pixel Transparency** row. The parameters are those of the RetroArch shader, on five pages: **Color**, **Transparency**, **Shadows**, **Motion** and **Grid & Quality**, plus **Reset to Defaults**. They are shared by every system and game. Hold <kbd>←</kbd> / <kbd>→</kbd> to change a value faster.
+- **See your changes on the game:** open the parameters from a paused game, then hold <kbd>Y</kbd>. The menu shrinks to the selected row while the game shows above it, so you can keep adjusting.
+- **Motion:** while it's on, the shadows follow the tilt of your handheld. With Motion off, or without an accelerometer, they use the fixed X/Y offset from the **Shadows** page.
+
+For the most authentic look, the shader's author recommends turning on **Color Correction** as well.
+
 ## Cart Studio
 
 Give your cartridges the artwork they deserve!
@@ -227,6 +240,7 @@ Special thanks to:
 - **[Markus](https://github.com/MarkusMaribu)** — The beautiful skeuomorphic artwork that gives slot. its unique identity.
 - **[pvaibhav](https://github.com/pvaibhav/slot)** — Contributions and improvements inherited from the Slot fork.
 - **[Watomsk](https://github.com/Watomsk/Overlays)** — The Game Boy, Game Boy Pocket and Game Boy Color overlays, used with permission.
+- **[mattakins](https://github.com/mattakins/Pixel_Transparency)** — The Pixel Transparency shader.
 - **[mGBA](https://mgba.io/), [gpSP](https://github.com/libretro/gpsp), [Gambatte](https://github.com/libretro/gambatte-libretro), [libretro](https://www.libretro.com/) and [RetroAchievements](https://retroachievements.org/)** — The projects and contributors powering emulation and achievements.
 
 This is an **unofficial community port**, not affiliated with or endorsed by the original Slot developers or the KONKR Pocket Advance manufacturer.

@@ -27,6 +27,8 @@ pub struct EmulationProfile {
     pub turbo_override: Option<bool>, // original KONKR "X/Y Buttons"
     pub rumble_override: Option<bool>,
     pub eject_save_override: Option<bool>,
+    // Pixel Transparency ON/OFF for this game; the parameters stay shared.
+    pub pixel_transparency_override: Option<bool>,
     // Boktai's sun: mGBA's level 0..=10, or SUN_SENSOR for the light
     // sensor. None follows the handheld (sensor if it has one).
     pub sun: Option<u8>,
@@ -79,7 +81,8 @@ impl EmulationProfile {
             ff_sound_override: None, rewind_override: None,
             rewind_speed_override: None,
             turbo_override: None, rumble_override: None,
-            eject_save_override: None, sun: None }
+            eject_save_override: None, pixel_transparency_override: None,
+            sun: None }
     }
     /// Materialise the *current* game's per-ROM settings without mutating
     /// Settings.json or any other game's configured defaults.
@@ -104,6 +107,9 @@ impl EmulationProfile {
         if let Some(value)=self.turbo_override { settings.turbo=value; }
         if let Some(value)=self.rumble_override { settings.rumble=value; }
         if let Some(value)=self.eject_save_override { settings.eject_save=value; }
+        if let Some(on)=self.pixel_transparency_override {
+            settings.set_pixel_transparency_for(platform,on);
+        }
     }
 
     /// Screen/Gameplay pause edits are scoped to the current cart and core.
@@ -123,6 +129,9 @@ impl EmulationProfile {
             (Platform::Gb,2)=>24,
             (_,25..=27)=>match platform {
                 Platform::Gba=>25,Platform::Gbc=>26,Platform::Gb=>27
+            },
+            (_,32..=34)=>match platform {
+                Platform::Gba=>32,Platform::Gbc=>33,Platform::Gb=>34
             },
             _=>key,
         };
@@ -145,6 +154,8 @@ impl EmulationProfile {
             7 => self.turbo_override=Some(view.turbo),
             8 => self.rumble_override=Some(view.rumble),
             9 => self.eject_save_override=Some(view.eject_save),
+            32..=34 => self.pixel_transparency_override=
+                Some(view.pixel_transparency_for(platform)),
             _ => return false,
         }
         true
@@ -509,6 +520,27 @@ mod tests {
         assert_eq!(EmulationProfile::load(&root, uri, Core::Mgba), Some(one));
         assert_eq!(EmulationProfile::load(&root, uri, Core::Gpsp), None);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pixel_transparency_can_be_switched_for_one_game_only() {
+        let global = Settings { pixel_transparency_gbc: true, ..Default::default() };
+        let mut profile = EmulationProfile::from_settings(&global);
+        assert!(profile.change_visual_and_gameplay(&global, Platform::Gbc, 33, true));
+        assert_eq!(profile.pixel_transparency_override, Some(false));
+        let mut view = global.clone();
+        profile.apply_visual_and_gameplay(&mut view, Platform::Gbc);
+        assert!(!view.pixel_transparency_gbc);
+        assert!(global.pixel_transparency_gbc, "Settings.json is untouched");
+        // A GB game's toggle lands on GB, whatever key the row sent.
+        let mut gb = EmulationProfile::from_settings(&global);
+        assert!(gb.change_visual_and_gameplay(&global, Platform::Gb, 32, true));
+        let mut view = global.clone();
+        gb.apply_visual_and_gameplay(&mut view, Platform::Gb);
+        assert!(view.pixel_transparency_gb && !view.pixel_transparency_gba);
+        // Older per-game files have no opinion.
+        let old: EmulationProfile = serde_json::from_str(r#"{"run_ahead_frames":1}"#).unwrap();
+        assert_eq!(old.pixel_transparency_override, None);
     }
 
 }

@@ -37,6 +37,9 @@ static ROTATION: AtomicU8 = AtomicU8::new(0);
 static GRAVITY_SAMPLES: Mutex<Calibration> = Mutex::new(Calibration::new());
 // A solar cartridge reading the light sensor through slot., not a core.
 static LIGHT_WANTED: AtomicU8 = AtomicU8::new(0);
+// A screen effect (Pixel Transparency's moving shadows) reading the
+// accelerometer through slot., not a core.
+static TILT_WANTED: AtomicU8 = AtomicU8::new(0);
 // mGBA's MBC7 (Kirby Tilt 'n' Tumble) negates both tilt axes that its
 // GBA tilt cartridges take as they are.
 static TILT_INVERTED: AtomicU8 = AtomicU8::new(0);
@@ -111,11 +114,38 @@ pub fn wanted() -> u8 {
         .filter(|&s| WANTED[bit_index(s)].load(Ordering::Acquire) > 0)
         .fold(0, |mask, s| mask | s)
         | if LIGHT_WANTED.load(Ordering::Acquire) != 0 { ILLUMINANCE } else { 0 }
+        | if TILT_WANTED.load(Ordering::Acquire) != 0 && available() & ACCELEROMETER != 0 {
+            ACCELEROMETER
+        } else {
+            0
+        }
 }
 
 /// Keep the light sensor on for a solar cartridge whose Sun is SENSOR.
 pub fn set_light_wanted(wanted: bool) {
     LIGHT_WANTED.store(wanted as u8, Ordering::Release);
+}
+
+/// Keep the accelerometer on for a screen effect that follows the tilt.
+/// Switched on from nothing, it starts from rest like a core's.
+pub fn set_tilt_wanted(wanted: bool) {
+    let was = TILT_WANTED.swap(wanted as u8, Ordering::AcqRel) != 0;
+    if wanted && !was && WANTED[bit_index(ACCELEROMETER)].load(Ordering::Acquire) == 0 {
+        begin(ACCELEROMETER);
+    }
+}
+
+/// The accelerometer in g, turned the way the handheld is held, as
+/// RetroArch hands it to shaders (no cartridge's axis inversion). None
+/// until a reading has arrived, or without an accelerometer.
+pub fn gravity() -> Option<[f32; 3]> {
+    if available() & ACCELEROMETER == 0 || wanted() & ACCELEROMETER == 0 {
+        return None;
+    }
+    let rotation = ROTATION.load(Ordering::Relaxed);
+    let g = [ACCELEROMETER_X, ACCELEROMETER_X + 1, ACCELEROMETER_Z]
+        .map(|id| read_turned(id, rotation));
+    (g.iter().any(|v| *v != 0.0)).then_some(g)
 }
 
 /// The light sensor's last reading, in lux.
@@ -227,6 +257,13 @@ fn begin(sensor: u8) {
 /// RetroArch's input_get_sensor_state on Android: X and Y follow the
 /// detected rotation (90°: X->Y, Y->-X), Z and light are untouched.
 fn read(id: c_uint, rotation: u8) -> f32 {
+    let value = read_turned(id, rotation);
+    let tilt = (ACCELEROMETER_X..ACCELEROMETER_Z).contains(&id);
+    if tilt && TILT_INVERTED.load(Ordering::Relaxed) != 0 { -value } else { value }
+}
+
+/// `read` without the MBC7 inversion.
+fn read_turned(id: c_uint, rotation: u8) -> f32 {
     let (base, scale) = match id {
         ACCELEROMETER_X..=ACCELEROMETER_Z => (0, 1.0 / GRAVITY),
         GYROSCOPE_X..=GYROSCOPE_Z => (3, 1.0),
@@ -241,13 +278,15 @@ fn read(id: c_uint, rotation: u8) -> f32 {
         (0, _) => (1, -1.0),
         _ => (0, 1.0),
     };
-    let inverted = base == 0 && axis < 2 && TILT_INVERTED.load(Ordering::Relaxed) != 0;
-    load(base + axis) * scale * if inverted { -sign } else { sign }
+    load(base + axis) * scale * sign
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Tests that switch sensors on share the process-wide state.
+    static SHARED: Mutex<()> = Mutex::new(());
 
     #[test]
     fn calibration_picks_the_axis_gravity_pulls_on() {
@@ -281,6 +320,7 @@ mod tests {
 
     #[test]
     fn a_core_gets_only_sensors_the_device_has_and_lets_them_go() {
+        let _shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
         set_available(ACCELEROMETER);
         let mut core = Enabled::default();
         assert!(!core.action(GYROSCOPE_ENABLE));
@@ -296,5 +336,30 @@ mod tests {
         core.release();
         assert_eq!(wanted(), 0);
         assert_eq!(core.input(1), 0.0);
+    }
+
+    #[test]
+    fn a_screen_effect_can_follow_the_tilt_without_a_core() {
+        let _shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+        set_available(0);
+        set_tilt_wanted(true);
+        assert_eq!(wanted() & ACCELEROMETER, 0, "no accelerometer, nothing to listen to");
+        assert_eq!(gravity(), None);
+        set_tilt_wanted(false);
+        set_available(ACCELEROMETER | GYROSCOPE);
+        set_tilt_wanted(true);
+        assert_eq!(wanted() & ACCELEROMETER, ACCELEROMETER);
+        assert_eq!(gravity(), None, "no reading yet");
+        push_accelerometer(0.0, GRAVITY, 0.0);
+        let g = gravity().unwrap();
+        assert!((g[1] - 1.0).abs() < 1e-6 && g[0] == 0.0);
+        // A Kirby Tilt 'n' Tumble session inverts its own tilt, not the shader's.
+        set_tilt_inverted(true);
+        assert!((gravity().unwrap()[1] - 1.0).abs() < 1e-6);
+        assert!((read(1, 0) + 1.0).abs() < 1e-6, "the core still sees MBC7 axes");
+        set_tilt_inverted(false);
+        set_tilt_wanted(false);
+        assert_eq!(wanted(), 0);
+        assert_eq!(gravity(), None);
     }
 }

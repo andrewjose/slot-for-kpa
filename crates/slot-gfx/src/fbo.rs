@@ -235,6 +235,10 @@ impl Compositor {
         self.game.set_picture(rect);
     }
 
+    pub fn set_pixel_transparency(&mut self, pt: Option<crate::PixelTransparency>) {
+        self.game.set_pixel_transparency(pt);
+    }
+
     pub fn set_paper(&mut self, size: u32, rgba: &[u8]) {
         self.game.set_paper(size, rgba);
     }

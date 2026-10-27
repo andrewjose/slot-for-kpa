@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use crate::game::GameSession;
 use crate::settings::Settings;
 use crate::emulation::EmulationProfile;
+use crate::pixel_transparency::{PtField, PtPage, PtParams};
 use std::time::Duration;
 use crate::video_mode::{self, VideoMode};
 use crate::core_selection;
@@ -406,6 +407,17 @@ enum ShelfOverlay {
     GameMenu { row: usize },
     Multiplayer,
     States,
+    /// Pixel Transparency: its page list (`page` None), or one page's rows.
+    PixelTransparency { from: PtFrom, page: Option<PtPage>, row: usize },
+}
+
+/// The page a Pixel Transparency menu returns to on B.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum PtFrom {
+    /// Settings > Systems, from a system's Pixel Transparency row.
+    Systems { platform: Platform, row: usize },
+    /// A paused game's Screen settings: the game shows behind the menu.
+    Pause { row: usize },
 }
 
 const MENU_TEXT: [&str; 120] = [
@@ -530,6 +542,30 @@ const MENU_TEXT: [&str; 120] = [
     "Default Core",                      // 118
     "Sun",                               // 119, Boktai's solar sensor
 ];
+
+/// Pixel Transparency menu text, loaded after MENU_TEXT: its row and page
+/// list, then each page's title, then every parameter's label.
+const PT_TEXT: usize = MENU_TEXT.len();
+const PT_ROW: usize = PT_TEXT;
+const PT_HEADING: usize = PT_TEXT + 1;
+const PT_RESET: usize = PT_TEXT + 2;
+fn pt_texts() -> impl Iterator<Item = &'static str> {
+    ["Pixel Transparency", "PIXEL TRANSPARENCY", "Reset to Defaults"].into_iter()
+        .chain(PtPage::ALL.map(PtPage::name))
+        .chain(PtPage::ALL.map(PtPage::title))
+        .chain(PtField::ALL.map(PtField::label))
+}
+fn pt_page_name(page: PtPage) -> usize { PT_TEXT + 3 + page.index() }
+fn pt_page_title(page: PtPage) -> usize { PT_TEXT + 3 + PtPage::ALL.len() + page.index() }
+fn pt_field_label(field: PtField) -> usize {
+    PT_TEXT + 3 + 2 * PtPage::ALL.len() + field.index()
+}
+/// The page list: one row per page, then Reset to Defaults.
+fn pt_list() -> Vec<usize> {
+    PtPage::ALL.into_iter().map(pt_page_name).chain([PT_RESET]).collect()
+}
+/// Settings keys of the per-system Pixel Transparency rows.
+fn pt_key(key: usize) -> bool { (32..=34).contains(&key) }
 
 /// Pause Emulation's Sun row, drawn with the sun values, not a Settings key.
 const SUN_KEY: usize = 100;
@@ -688,6 +724,14 @@ struct Engine {
     palette_values: Vec<(slot_gfx::TexId, u32, u32)>,
     setting_carets: [(slot_gfx::TexId, u32, u32); 2],
     settings_hints: [(slot_gfx::TexId, u32); 2],
+    // Pixel Transparency: the shown page's values (redrawn as they change),
+    // the legends offering A Adjust and in-game Y Preview, the preview
+    // itself, and edits not yet written to Settings.json.
+    pt_value_faces: Vec<(slot_gfx::TexId, u32, u32)>,
+    pt_row_hints: [(slot_gfx::TexId, u32); 3],
+    pt_page_hints: [(slot_gfx::TexId, u32); 3],
+    pt_preview: bool,
+    pt_dirty_since: Option<Instant>,
     about_texture: Option<slot_gfx::TexId>,
     update_status: u8,
     update_auto: bool,
@@ -947,7 +991,7 @@ impl Engine {
             arrow_left: sprite(art.arrow_left),
             arrow_right: sprite(art.arrow_right),
         };
-        let menu_textures = MENU_TEXT.iter().map(|label| {
+        let menu_textures = MENU_TEXT.iter().copied().chain(pt_texts()).map(|label| {
             let face = quick_value_face(label, true);
             let tex = gpu.create_face(&face);
             (tex, face.w, face.h)
@@ -1077,6 +1121,14 @@ impl Engine {
         ].map(|face| {
             let tex = gpu.create_face(&face);
             (tex, face.w)
+        });
+        let pt_value_faces = (0..6).map(|_| {
+            let face = quick_value_face("0.00", true);
+            (gpu.create_face(&face), face.w, face.h)
+        }).collect();
+        let [pt_row_hints, pt_page_hints] = [("A", "Adjust"), ("Y", "Preview")].map(|middle| {
+            [hint_face("B", "Back"), hint_face(middle.0, middle.1), arrows_hint_face("Change")]
+                .map(|face| (gpu.create_face(&face), face.w))
         });
         // Rasterize the detailed barcode About label only when opened.
         // Creating SVG / fonts during every cold boot needlessly delays shelf.
@@ -1230,6 +1282,11 @@ impl Engine {
             palette_values,
             setting_carets,
             settings_hints,
+            pt_value_faces,
+            pt_row_hints,
+            pt_page_hints,
+            pt_preview: false,
+            pt_dirty_since: None,
             about_texture,
             update_status: 0,
             update_auto: true,
@@ -1404,7 +1461,7 @@ impl Engine {
                     self.change_game_screen_or_gameplay(key,code == 96);
                 } else { self.change_setting(key,code == 96); }
                 let shader = self.game_shader();
-                self.gpu.set_screen_effect(self.game_effect());
+                self.sync_screen_effect();
                 self.hud.toast(match shader {
                     crate::settings::Shader::Off => Toast::ShaderOff,
                     crate::settings::Shader::Lcd3x => Toast::ShaderLcd3x,
@@ -2276,7 +2333,7 @@ impl Engine {
                 }
             }
             Input::Key(code, pressed) => {
-                if matches!(code, 19 | 20) {
+                if matches!(code, 19 | 20) || (matches!(code, 21 | 22) && self.pt_page_open()) {
                     if !pressed {
                         if self.menu_held.is_some_and(|(held,_,_)|held==code) {
                             self.menu_held=None;
@@ -2405,6 +2462,7 @@ impl Engine {
                                     | ShelfOverlay::PauseScreenSettings { .. }
                                     | ShelfOverlay::PauseGameplaySettings { .. }
                                     | ShelfOverlay::PauseEmulationSettings { .. }
+                                    | ShelfOverlay::PixelTransparency { .. }
                                     | ShelfOverlay::States => ShelfOverlay::None,
                                     _=>ShelfOverlay::GameMenu {row:0},
                                 };
@@ -2592,6 +2650,10 @@ impl Engine {
                     }
                     return;
                 }
+                if matches!(self.overlay, ShelfOverlay::PixelTransparency { .. }) {
+                    self.pt_key(code, pressed);
+                    return;
+                }
                 if self.game.is_some() && matches!(self.overlay, ShelfOverlay::PauseSettings { .. }
                     | ShelfOverlay::PauseScreenSettings { .. }
                     | ShelfOverlay::PauseGameplaySettings { .. }
@@ -2624,6 +2686,8 @@ impl Engine {
                                 19 | 20 => self.overlay = ShelfOverlay::PauseScreenSettings {
                                     row: move_menu_row(row,code,self.pause_screen_rows().len()),
                                 },
+                                96 if self.pause_screen_key(row).is_some_and(pt_key) =>
+                                    self.open_pt(PtFrom::Pause { row }),
                                 21 | 22 => if let Some(key)=self.pause_screen_key(row) {
                                     self.change_game_screen_or_gameplay(key,code==22);
                                 },
@@ -2908,6 +2972,8 @@ impl Engine {
                                 19 | 20 => self.overlay=ShelfOverlay::ScreenSystemSettings {
                                     platform,row:move_menu_row(row,code,Self::system_rows(platform).len()),
                                 },
+                                96 if Self::system_keys(platform).get(row).copied().is_some_and(pt_key) =>
+                                    self.open_pt(PtFrom::Systems { platform, row }),
                                 21 | 22 | 96 => if let Some(key)=Self::system_keys(platform).get(row).copied(){
                                     self.change_setting(key,code!=21);
                                 },
@@ -2998,6 +3064,7 @@ impl Engine {
                             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
                             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
                             ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } |
+                            ShelfOverlay::PixelTransparency { .. } |
                             ShelfOverlay::States | ShelfOverlay::None => {}
                         }
                     }
@@ -3409,7 +3476,7 @@ impl Engine {
         let y2 = 1.0 - y;
         self.gpu.set_picture([x, y, x2, y2]);
         self.gpu.set_game_source_rect(video_mode::source_rect(platform, self.video_mode));
-        self.gpu.set_screen_effect(self.game_effect());
+        self.sync_screen_effect();
     }
 
     fn set_video_mode(&mut self, mode: VideoMode) {
@@ -3446,6 +3513,40 @@ impl Engine {
     fn game_effect(&self) -> slot_gfx::ScreenEffect {
         video_mode::screen_effect(self.game_shader(), self.current_cart_platform(),
             self.video_mode)
+    }
+    /// The screen shader, then Pixel Transparency after it.
+    fn sync_screen_effect(&mut self) {
+        self.gpu.set_screen_effect(self.game_effect());
+        self.push_pixel_transparency();
+    }
+    /// Whether this cartridge shows Pixel Transparency: its own choice from
+    /// the pause menu, else its system's. No Settings clone: runs per frame.
+    fn pt_on(&self) -> bool {
+        self.game_emulation.and_then(|p| p.pixel_transparency_override)
+            .unwrap_or_else(|| self.settings.pixel_transparency_for(self.current_cart_platform()))
+    }
+    fn push_pixel_transparency(&mut self) {
+        let pt = self.pt_on().then(|| self.settings.pixel_transparency
+            .shader(slot_retro::sensors::gravity()));
+        self.gpu.set_pixel_transparency(pt);
+    }
+    /// Per frame: shadows that follow the tilt keep the accelerometer on
+    /// while a game runs, and edits reach Settings.json once they settle
+    /// (a held arrow would otherwise write the file every 50 ms).
+    fn tick_pixel_transparency(&mut self) {
+        if let Some(since) = self.pt_dirty_since {
+            if !self.pt_page_open() || since.elapsed() >= Duration::from_millis(700) {
+                self.pt_dirty_since = None;
+                self.persist_settings();
+            }
+        }
+        let tilt = self.game.is_some() && self.pt_on()
+            && self.settings.pixel_transparency.wants_tilt();
+        slot_retro::sensors::set_tilt_wanted(tilt);
+        if tilt { self.push_pixel_transparency(); }
+    }
+    fn pt_page_open(&self) -> bool {
+        matches!(self.overlay, ShelfOverlay::PixelTransparency { page: Some(_), .. })
     }
 
     /// The top banner naming the new screen size.
@@ -3488,32 +3589,32 @@ impl Engine {
         match platform {
             // Upstream v1.7 hides GBA bezel on an unframed 3:2 panel:
             // GBA already fills KONKR's native 960x640 display.
-            Platform::Gba=>&[34,29],
-            Platform::Gbc=>&[88,29,90],
-            Platform::Gb=>&[89,29,36,90],
+            Platform::Gba=>&[34,29,PT_ROW],
+            Platform::Gbc=>&[88,29,90,PT_ROW],
+            Platform::Gb=>&[89,29,36,90,PT_ROW],
         }
     }
     fn screen_keys(platform:Platform)-> &'static [usize] {
         match platform {
-            Platform::Gba=>&[0,22],
-            Platform::Gbc=>&[21,23,26],
-            Platform::Gb=>&[1,24,3,27],
+            Platform::Gba=>&[0,22,32],
+            Platform::Gbc=>&[21,23,26,33],
+            Platform::Gb=>&[1,24,3,27,34],
         }
     }
     // Settings > Systems opens with the system's default core, then the
     // screen rows a paused game of that system also shows.
     fn system_rows(platform: Platform)-> &'static [usize] {
         match platform {
-            Platform::Gba=>&[118,34,29],
-            Platform::Gbc=>&[118,88,29,90],
-            Platform::Gb=>&[118,89,29,36,90],
+            Platform::Gba=>&[118,34,29,PT_ROW],
+            Platform::Gbc=>&[118,88,29,90,PT_ROW],
+            Platform::Gb=>&[118,89,29,36,90,PT_ROW],
         }
     }
     fn system_keys(platform:Platform)-> &'static [usize] {
         match platform {
-            Platform::Gba=>&[29,0,22],
-            Platform::Gbc=>&[30,21,23,26],
-            Platform::Gb=>&[31,1,24,3,27],
+            Platform::Gba=>&[29,0,22,32],
+            Platform::Gbc=>&[30,21,23,26,33],
+            Platform::Gb=>&[31,1,24,3,27,34],
         }
     }
     fn core_key_platform(key:usize)->Option<Platform> {
@@ -3555,7 +3656,7 @@ impl Engine {
     fn pause_screen_rows(&self) -> &'static [usize] {
         if self.current_cart_platform()==Platform::Gb &&
             !self.game.as_ref().is_some_and(GameSession::can_change_gb_palette) {
-            &[89,29,90]
+            &[89,29,90,PT_ROW]
         } else {
             Self::screen_rows(self.current_cart_platform())
         }
@@ -3563,7 +3664,7 @@ impl Engine {
     fn pause_screen_key(&self,row:usize)->Option<usize> {
         if self.current_cart_platform()==Platform::Gb &&
             !self.game.as_ref().is_some_and(GameSession::can_change_gb_palette) {
-            [1,24,27].get(row).copied()
+            [1,24,27,34].get(row).copied()
         } else {
             Self::screen_keys(self.current_cart_platform()).get(row).copied()
         }
@@ -3661,7 +3762,7 @@ impl Engine {
         let relaunch=self.game.as_ref().is_some_and(GameSession::requires_relaunch);
         // Shader and color-correction are display-only and safe while linked;
         // never change input, save states, emulation speed or rewind in Link.
-        if relaunch || (linked && !matches!(key,0|1|2|21|22|23|24|25|26|27)) {
+        if relaunch || (linked && !matches!(key,0|1|2|21|22|23|24|25|26|27|32|33|34)) {
             set_message("Not available during Multiplayer.".into());
             return;
         }
@@ -3691,8 +3792,8 @@ impl Engine {
         self.game_emulation=Some(profile);
         if matches!(key,26|27) {self.tell_hidden_bezel();}
         let view=self.game_settings();
-        if matches!(key,0|1|21) {
-            self.gpu.set_screen_effect(self.game_effect());
+        if matches!(key,0|1|21|32|33|34) {
+            self.sync_screen_effect();
         }
         // A shader change can switch to/from a preset with its own GBA Color.
         // Recompute core colour here as well as when the correction toggle moves.
@@ -3831,7 +3932,7 @@ impl Engine {
         }
         let globals=self.game_settings();
         let platform=self.current_cart_platform();
-        self.gpu.set_screen_effect(self.game_effect());
+        self.sync_screen_effect();
         if let Some(session)=self.game.as_mut() {
             session.set_colour_correction(globals.shader_for(platform)
                 .core_colour(globals.colour_for(platform)));
@@ -4144,6 +4245,7 @@ impl Engine {
             return;
         }
         if !self.settings.change(key, right) { return; }
+        if pt_key(key) { self.sync_screen_effect(); }
         // Clock formatting can change independently of Android's next
         // status event. Force one re-render of the existing clock value.
         if key == 28 { self.last_system_status_rev = 0; }
@@ -4160,6 +4262,81 @@ impl Engine {
             }
         }
         self.persist_settings();
+    }
+
+    fn open_pt(&mut self, from: PtFrom) {
+        self.pt_preview = false;
+        self.overlay = ShelfOverlay::PixelTransparency { from, page: None, row: 0 };
+    }
+
+    /// Keys on the Pixel Transparency menus, on the shelf and in a paused
+    /// game. The parameters are shared by every system and game.
+    fn pt_key(&mut self, code: i32, pressed: bool) {
+        let ShelfOverlay::PixelTransparency { from, page, row } = self.overlay else { return };
+        let in_game = matches!(from, PtFrom::Pause { .. }) && self.game.is_some();
+        if code == 100 {
+            // Hold Y: only the chosen row stays, over the paused game.
+            self.pt_preview = pressed && in_game && page.is_some();
+            return;
+        }
+        if !pressed { return; }
+        let at = |page, row| ShelfOverlay::PixelTransparency { from, page, row };
+        match (page, code) {
+            (_, 108) if !in_game => {
+                self.pt_preview = false;
+                self.overlay = ShelfOverlay::None;
+            }
+            (None, 19 | 20) => {
+                self.overlay = at(None, move_menu_row(row, code, PtPage::ALL.len() + 1));
+            }
+            (None, 96) => match PtPage::ALL.get(row) {
+                Some(&page) => {
+                    self.overlay = at(Some(page), 0);
+                    self.refresh_pt_values();
+                }
+                None => {
+                    self.settings.pixel_transparency = PtParams::default();
+                    self.pt_dirty_since = None;
+                    self.persist_settings();
+                    self.push_pixel_transparency();
+                    set_message("Pixel Transparency is back to its defaults.".into());
+                }
+            },
+            (None, 97) => {
+                self.overlay = match from {
+                    PtFrom::Systems { platform, row } =>
+                        ShelfOverlay::ScreenSystemSettings { platform, row },
+                    PtFrom::Pause { row } => ShelfOverlay::PauseScreenSettings { row },
+                };
+            }
+            (Some(page), 19 | 20) => {
+                self.overlay = at(Some(page), move_menu_row(row, code, page.fields().len()));
+            }
+            (Some(page), 21 | 22) => {
+                let Some(&field) = page.fields().get(row) else { return };
+                if field.step(&mut self.settings.pixel_transparency, code == 22) {
+                    self.pt_dirty_since = Some(Instant::now());
+                    self.refresh_pt_values();
+                    self.push_pixel_transparency();
+                }
+            }
+            (Some(page), 97) => {
+                self.pt_preview = false;
+                self.overlay = at(None, page.index());
+            }
+            _ => {}
+        }
+    }
+
+    /// Redraw the shown page's values into their faces.
+    fn refresh_pt_values(&mut self) {
+        let ShelfOverlay::PixelTransparency { page: Some(page), .. } = self.overlay
+            else { return };
+        for (slot, field) in self.pt_value_faces.iter_mut().zip(page.fields()) {
+            let face = quick_value_face(&field.text(&self.settings.pixel_transparency), true);
+            self.gpu.update_face(slot.0, &face);
+            *slot = (slot.0, face.w, face.h);
+        }
     }
 
     /// The Palette row's value face while a palette is on; None shows OFF.
@@ -4235,6 +4412,9 @@ impl Engine {
             27 => bezel_value(scoped.bezel_gb),
             28 => if self.settings.time_format==crate::settings::TimeFormat::TwelveHour
                 {35}else{36},
+            32 => if scoped.pixel_transparency_gba {4}else{5},
+            33 => if scoped.pixel_transparency_gbc {4}else{5},
+            34 => if scoped.pixel_transparency_gb {4}else{5},
             29..=31 => match Self::core_key_platform(key)
                 .map_or(Core::Mgba, |platform| self.default_cores[platform as usize]) {
                 Core::Mgba => 50, Core::Gpsp => 51, Core::Gambatte => 52,
@@ -4268,7 +4448,7 @@ impl Engine {
     fn draw_setting_values(&self, row: usize, keys: &[usize], out: &mut Vec<Draw>) {
         let top = settings_row_top(keys.len());
         for (index, key) in keys.iter().copied().enumerate() {
-            if key > 31 && key != SUN_KEY { continue; } // Action-only rows have no value.
+            if key > 34 && key != SUN_KEY { continue; } // Action-only rows have no value.
             let (tex, width, height) =
                 if key == SUN_KEY {
                     let sun = self.current_emulation().sun(light_sensor(), self.sun_top());
@@ -4311,6 +4491,85 @@ impl Engine {
             colour: opening(),
         });
         for (tex, w, x) in centred_hints(&self.settings_hints, LEGEND_GAP) {
+            out.push(Draw::Tex {
+                x, y: 427.0, w: w as f32, h: HINT_H as f32,
+                tex, alpha: 1.0,
+            });
+        }
+    }
+
+    /// One Pixel Transparency page: labels, values, and the legend. In a
+    /// paused game, holding Y leaves only the chosen row at the foot of the
+    /// screen so each change shows on the game above it.
+    fn draw_pt_page(&self, from: PtFrom, page: PtPage, row: usize, out: &mut Vec<Draw>) {
+        let fields = page.fields();
+        let row = row.min(fields.len() - 1);
+        let in_game = matches!(from, PtFrom::Pause { .. }) && self.game.is_some();
+        let hints = if in_game { &self.pt_page_hints[..] } else { &self.settings_hints[..] };
+        if in_game && self.pt_preview {
+            self.draw_pt_strip(fields[row], row, hints, out);
+            return;
+        }
+        let labels: Vec<usize> = fields.iter().map(|field| pt_field_label(*field)).collect();
+        self.draw_original_style_menu(pt_page_title(page), &labels, row, out);
+        let top = settings_row_top(fields.len());
+        for (index, face) in self.pt_value_faces.iter().take(fields.len()).enumerate() {
+            let y = top + index as f32 * QUICK_PITCH + 8.0;
+            self.draw_pt_value(*face, y, index == row, out);
+        }
+        self.draw_pt_legend(hints, out);
+    }
+
+    /// The Y preview: the chosen row alone at the foot of the screen.
+    fn draw_pt_strip(&self, field: PtField, row: usize,
+                     hints: &[(slot_gfx::TexId, u32)], out: &mut Vec<Draw>) {
+        const ROW_TOP: f32 = 364.0;
+        out.push(Draw::Rect {
+            x: 0.0, y: ROW_TOP - 4.0, w: OUT_W as f32, h: OUT_H as f32 - ROW_TOP + 4.0,
+            colour: opening(),
+        });
+        out.push(Draw::Rect {
+            x: 0.0, y: ROW_TOP + 4.0, w: OUT_W as f32, h: QUICK_PITCH - 8.0,
+            colour: edge(),
+        });
+        self.text_fit(pt_field_label(field), 37.0, ROW_TOP + 8.0, 650.0, 1.0, out);
+        self.draw_pt_value(self.pt_value_faces[row], ROW_TOP + 8.0, true, out);
+        self.draw_pt_legend(hints, out);
+    }
+
+    /// A value at the right of its row, with carets when chosen, exactly as
+    /// draw_setting_values places them.
+    fn draw_pt_value(&self, (tex, width, height): (slot_gfx::TexId, u32, u32),
+                     y: f32, chosen: bool, out: &mut Vec<Draw>) {
+        let scale = 0.79;
+        let w = width as f32 * scale;
+        let right = OUT_W as f32 - 34.0;
+        let x = right - w - if chosen { 22.0 } else { 0.0 };
+        out.push(Draw::Tex {
+            x, y, w, h: height as f32 * scale,
+            tex, alpha: if chosen { 1.0 } else { 0.62 },
+        });
+        if chosen {
+            let (left, lw, lh) = self.setting_carets[0];
+            let (right_tex, rw, rh) = self.setting_carets[1];
+            out.push(Draw::Tex {
+                x: x - lw as f32 - 8.0, y, w: lw as f32,
+                h: lh as f32, tex: left, alpha: 1.0,
+            });
+            out.push(Draw::Tex {
+                x: right - rw as f32, y, w: rw as f32,
+                h: rh as f32, tex: right_tex, alpha: 1.0,
+            });
+        }
+    }
+
+    /// Replace the menu's keycap legend.
+    fn draw_pt_legend(&self, hints: &[(slot_gfx::TexId, u32)], out: &mut Vec<Draw>) {
+        out.push(Draw::Rect {
+            x: 0.0, y: 420.0, w: OUT_W as f32, h: 60.0,
+            colour: opening(),
+        });
+        for (tex, w, x) in centred_hints(hints, LEGEND_GAP) {
             out.push(Draw::Tex {
                 x, y: 427.0, w: w as f32, h: HINT_H as f32,
                 tex, alpha: 1.0,
@@ -4514,6 +4773,15 @@ impl Engine {
                 self.draw_original_style_menu(Self::screen_title(platform),
                     Self::system_rows(platform),row,out);
                 self.draw_setting_values(row,Self::system_keys(platform),out);
+                if Self::system_keys(platform).get(row).copied().is_some_and(pt_key) {
+                    self.draw_pt_legend(&self.pt_row_hints, out);
+                }
+            }
+            ShelfOverlay::PixelTransparency { page: None, row, .. } => {
+                self.draw_original_style_menu(PT_HEADING, &pt_list(), row, out);
+            }
+            ShelfOverlay::PixelTransparency { from, page: Some(page), row } => {
+                self.draw_pt_page(from, page, row, out);
             }
             ShelfOverlay::GameplaySettings { row } => {
                 self.draw_original_style_menu(33, &GAMEPLAY_ROWS, row, out);
@@ -4598,6 +4866,9 @@ impl Engine {
                 let keys: Vec<usize>=(0..items.len())
                     .filter_map(|index|self.pause_screen_key(index)).collect();
                 self.draw_setting_values(row,&keys,out);
+                if keys.get(row).copied().is_some_and(pt_key) {
+                    self.draw_pt_legend(&self.pt_row_hints, out);
+                }
             }
             ShelfOverlay::PauseGameplaySettings { row } => {
                 self.draw_original_style_menu(33, &GAMEPLAY_ROWS, row, out);
@@ -4815,6 +5086,7 @@ impl Engine {
         // outside the scope; Kotlin times the broader nativeDrawFrame call.
         let phase_native_started = Instant::now();
         self.tick_menu_repeat();
+        self.tick_pixel_transparency();
         self.refresh_system_status();
         // Poll the already-running achievement evaluator without blocking GL.
         // Only Android's foreground UI displays notices; the worker never
@@ -4967,6 +5239,10 @@ impl Engine {
             ShelfOverlay::ScreenSystemSettings { platform,row } =>
                 (16u8,row,Self::system_rows(platform).len()),
             ShelfOverlay::GameplaySettings { row } => (6u8, row, GAMEPLAY_KEYS.len()),
+            ShelfOverlay::PixelTransparency { page: None, row, .. } =>
+                (18u8, row, PtPage::ALL.len() + 1),
+            ShelfOverlay::PixelTransparency { page: Some(page), row, .. } =>
+                (19u8 + page.index() as u8, row, page.fields().len()),
             _ => (0, 0, 0),
         };
         if kind != self.menu_seen {
@@ -5071,7 +5347,7 @@ impl Engine {
                     // preparation; avoid synchronous IO/rebuilding the
                     // carousel in the first game-frame callback.
                     self.game_accum = 0.0;
-                    self.gpu.set_screen_effect(self.game_effect());
+                    self.sync_screen_effect();
                     // The exact Slot upstream geometry: GB/GBC 160x144
                     // is centred within the 240x160 libretro canvas.
                     let name = self.shelves[self.active].carts
@@ -5110,7 +5386,8 @@ impl Engine {
         if self.game.is_some() && matches!(self.overlay,
             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
-            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. }) {
+            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } |
+            ShelfOverlay::PixelTransparency { .. }) {
             // Coordinate the pause with the remote game. Without this
             // the other Cable peer times out and gpSP RFU can drift.
             if let Some(game) = self.game.as_mut() { game.set_link_paused(true); }

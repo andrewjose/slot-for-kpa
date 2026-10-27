@@ -2,6 +2,10 @@
 
 This changelog covers the public releases of the dedicated KONKR Pocket Advance Android port. Earlier development experiments are preserved in Git history.
 
+## Unreleased
+
+- **Pixel Transparency** (mattakins, v2.3) after any screen shader: light pixels show the screen's backing, with drop shadows. ON/OFF per system in Settings → Systems and per game in the pause menu's Screen settings; A on its row opens every shader parameter (Color, Transparency, Shadows, Motion, Grid & Quality, Reset to Defaults). Hold Y in a paused game to see changes on the game. With Motion on, shadows follow the accelerometer.
+
 ## v1.3.4 — 27 October 2026
 
 - Analog stick: the first centred stick event reaches Android again, so its stick-to-D-pad conversion releases the direction (#68).

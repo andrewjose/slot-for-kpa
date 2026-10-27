@@ -1,4 +1,5 @@
 use crate::lcd3x::ScreenEffect;
+use crate::pixel_transparency::PixelTransparency;
 use crate::power::{screen_brightness, screen_rect};
 use crate::quad::Quad;
 use crate::shaders::{GAME_FRAG, RECT_VERT};
@@ -33,6 +34,9 @@ pub struct GamePass {
     paper_size: f32,
     paper_pixels: Option<(u32, Vec<u8>)>,
     effect: ScreenEffect,
+    u_pt: [gl::types::GLint; 5],
+    u_pt_shadow: gl::types::GLint,
+    pixel_transparency: Option<PixelTransparency>,
     power: f32,
     src: [f32; 4],
 }
@@ -51,6 +55,7 @@ impl GamePass {
         target.fbo_scale = self.fbo_scale;
         target.pic = self.pic;
         target.effect = self.effect;
+        target.pixel_transparency = self.pixel_transparency;
         target.power = self.power;
         target.src = self.src;
         if let Some((size, rgba)) = &self.paper_pixels {
@@ -68,6 +73,7 @@ impl GamePass {
         let game = crate::gl::texture(SRC_W, SRC_H, gl::NEAREST, gl::CLAMP_TO_EDGE, format, None);
         let paper = crate::gl::texture(1, 1, gl::NEAREST, gl::REPEAT, gl::RGBA, Some(&[255; 4]));
         let (u_rect, u_bright, u_uv, u_mode, u_paper_size, u_pic, u_fbo, u_colour_correct);
+        let (u_pt, u_pt_shadow);
         unsafe {
             gl::UseProgram(prog);
             gl::Uniform1i(crate::gl::uniform_location(prog, "u_game"), 0);
@@ -90,6 +96,9 @@ impl GamePass {
             u_paper_size = crate::gl::uniform_location(prog, "u_paper_size");
             u_fbo = crate::gl::uniform_location(prog, "u_fbo");
             u_pic = crate::gl::uniform_location(prog, "u_pic");
+            u_pt = ["u_pt0", "u_pt1", "u_pt2", "u_pt3", "u_pt4"]
+                .map(|name| crate::gl::uniform_location(prog, name));
+            u_pt_shadow = crate::gl::uniform_location(prog, "u_pt_shadow");
         }
         Ok(GamePass {
             context_lost: false,
@@ -112,6 +121,9 @@ impl GamePass {
             paper_size: 1.0,
             paper_pixels: None,
             effect: ScreenEffect::Lcd3x,
+            u_pt,
+            u_pt_shadow,
+            pixel_transparency: None,
             power: 1.0,
             src: WHOLE_TEXTURE,
         })
@@ -135,6 +147,11 @@ impl GamePass {
 
     pub fn set_colour_correction(&mut self, enabled: bool) {
         self.colour_correct = enabled;
+    }
+
+    /// Pixel Transparency after the screen effect, or None for off.
+    pub fn set_pixel_transparency(&mut self, pt: Option<PixelTransparency>) {
+        self.pixel_transparency = pt;
     }
 
     pub fn set_paper(&mut self, size: u32, rgba: &[u8]) {
@@ -223,6 +240,14 @@ impl GamePass {
                 self.pic[2],
                 self.pic[3],
             );
+            let (pt, shadow) = match &self.pixel_transparency {
+                Some(pt) => (pt.uniforms(), pt.shadow_offset),
+                None => (PixelTransparency::OFF, [0.0; 2]),
+            };
+            for (location, v) in self.u_pt.iter().zip(pt) {
+                gl::Uniform4f(*location, v[0], v[1], v[2], v[3]);
+            }
+            gl::Uniform2f(self.u_pt_shadow, shadow[0], shadow[1]);
             gl::ActiveTexture(gl::TEXTURE1);
             gl::BindTexture(gl::TEXTURE_2D, self.paper);
             gl::ActiveTexture(gl::TEXTURE0);

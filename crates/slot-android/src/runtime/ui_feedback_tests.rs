@@ -16,10 +16,42 @@ fn updater_about_has_two_actions_in_all_statuses() {
 
 #[test]
 fn gba_three_two_screen_hides_no_op_bezel_but_keeps_gb_gbc() {
-    assert_eq!(Engine::screen_rows(Platform::Gba), &[34,29]);
-    assert_eq!(Engine::screen_keys(Platform::Gba), &[0,22]);
-    assert_eq!(Engine::screen_rows(Platform::Gbc), &[88,29,90]);
-    assert_eq!(Engine::screen_rows(Platform::Gb), &[89,29,36,90]);
+    assert_eq!(Engine::screen_rows(Platform::Gba), &[34,29,PT_ROW]);
+    assert_eq!(Engine::screen_keys(Platform::Gba), &[0,22,32]);
+    assert_eq!(Engine::screen_rows(Platform::Gbc), &[88,29,90,PT_ROW]);
+    assert_eq!(Engine::screen_rows(Platform::Gb), &[89,29,36,90,PT_ROW]);
+}
+
+#[test]
+fn pixel_transparency_rows_fit_every_systems_and_screen_page() {
+    for platform in Platform::ALL {
+        for (rows, keys) in [
+            (Engine::screen_rows(platform), Engine::screen_keys(platform)),
+            (Engine::system_rows(platform), Engine::system_keys(platform)),
+        ] {
+            assert_eq!(rows.len(), keys.len());
+            assert!(rows.len() <= 6, "{platform:?}: a page holds six rows");
+            assert_eq!(rows.last(), Some(&PT_ROW));
+            let key = *keys.last().unwrap();
+            assert!(pt_key(key));
+            let mut settings = Settings::default();
+            assert!(settings.change(key, true));
+            assert!(settings.pixel_transparency_for(platform), "{platform:?} row sets its own system");
+        }
+    }
+    // Every Pixel Transparency string has its own texture after MENU_TEXT.
+    let texts: Vec<&str> = pt_texts().collect();
+    assert_eq!(texts[PT_ROW - PT_TEXT], "Pixel Transparency");
+    assert_eq!(texts[PT_RESET - PT_TEXT], "Reset to Defaults");
+    for page in PtPage::ALL {
+        assert_eq!(texts[pt_page_name(page) - PT_TEXT], page.name());
+        assert_eq!(texts[pt_page_title(page) - PT_TEXT], page.title());
+    }
+    for field in PtField::ALL {
+        assert_eq!(texts[pt_field_label(field) - PT_TEXT], field.label());
+    }
+    assert_eq!(pt_list().len(), PtPage::ALL.len() + 1);
+    assert!(pt_list().len() <= 6);
 }
 #[test]
 fn ordinary_cart_scrolling_does_not_restart_name_fade() {
@@ -464,4 +496,70 @@ fn empty_shelves_are_skipped_in_both_directions() {
     assert_eq!(next_nonempty_shelf(&shelves, 0, 1), 2);
     assert_eq!(next_nonempty_shelf(&shelves, 0, -1), 2);
     assert_eq!(next_nonempty_shelf(&shelves, 2, 1), 0);
+}
+
+#[test]
+fn pixel_transparency_menus_edit_the_shared_parameters() {
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    let key = |engine: &mut Engine, code: i32| {
+        engine.handle(Input::Key(code, true));
+        engine.handle(Input::Key(code, false));
+    };
+    let draws = |engine: &Engine| {
+        let mut out = Vec::new();
+        engine.draw_overlay(&mut out);
+        out.len()
+    };
+    // Settings > Systems > Game Boy Color, on its Pixel Transparency row.
+    let row = Engine::system_rows(Platform::Gbc).len() - 1;
+    engine.overlay = ShelfOverlay::ScreenSystemSettings { platform: Platform::Gbc, row };
+    assert!(draws(&engine) > 0);
+    key(&mut engine, 22);
+    assert!(engine.settings.pixel_transparency_gbc, "Left/Right switch it");
+    assert!(!engine.settings.pixel_transparency_gba);
+    key(&mut engine, 96);
+    let from = PtFrom::Systems { platform: Platform::Gbc, row };
+    assert_eq!(engine.overlay, ShelfOverlay::PixelTransparency { from, page: None, row: 0 });
+    assert!(engine.settings.pixel_transparency_gbc, "A opens, it does not switch");
+    assert!(draws(&engine) > 0);
+
+    // TRANSPARENCY, second row: 0.20 -> 0.21.
+    key(&mut engine, 20);
+    key(&mut engine, 96);
+    let page = Some(PtPage::Transparency);
+    assert_eq!(engine.overlay, ShelfOverlay::PixelTransparency { from, page, row: 0 });
+    key(&mut engine, 20);
+    key(&mut engine, 22);
+    assert_eq!(engine.settings.pixel_transparency.transparency, 21);
+    assert!(engine.pt_dirty_since.is_some(), "written once the edits settle");
+    let shown = quick_value_face("0.21", true);
+    assert_eq!(engine.pt_value_faces[1].1, shown.w, "the value face is redrawn");
+    assert!(draws(&engine) > 0);
+    // Held Right repeats on a parameter page.
+    engine.handle(Input::Key(22, true));
+    assert!(engine.menu_held.is_some_and(|(code, _, _)| code == 22));
+    engine.handle(Input::Key(22, false));
+    assert!(engine.menu_held.is_none());
+    // On the shelf, Y has nothing to preview.
+    engine.handle(Input::Key(100, true));
+    assert!(!engine.pt_preview);
+
+    // B back to the list (on the page's own row), then to Systems.
+    key(&mut engine, 97);
+    assert_eq!(engine.overlay,
+        ShelfOverlay::PixelTransparency { from, page: None, row: PtPage::Transparency.index() });
+    engine.tick_pixel_transparency();
+    assert!(engine.pt_dirty_since.is_none(), "leaving the page writes the edit");
+    key(&mut engine, 97);
+    assert_eq!(engine.overlay, ShelfOverlay::ScreenSystemSettings { platform: Platform::Gbc, row });
+
+    // Reset to Defaults is the list's last row.
+    engine.open_pt(from);
+    for _ in 0..PtPage::ALL.len() { key(&mut engine, 20); }
+    key(&mut engine, 96);
+    assert_eq!(engine.settings.pixel_transparency, PtParams::default());
+    // START leaves every shelf menu.
+    key(&mut engine, 108);
+    assert_eq!(engine.overlay, ShelfOverlay::None);
 }

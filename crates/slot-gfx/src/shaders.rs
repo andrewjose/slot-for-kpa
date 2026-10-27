@@ -62,6 +62,13 @@ uniform float u_paper_size;
 uniform vec4 u_rect;
 uniform vec2 u_fbo;
 uniform vec4 u_pic;
+// Pixel Transparency (see pixel_transparency.rs for each value).
+uniform vec4 u_pt0; // on, transparent pixels, amount, white threshold
+uniform vec4 u_pt1; // white boost, natural brightness, grid on colors / whites
+uniform vec4 u_pt2; // backing tint, tint intensity, backing brightness, polarizer
+uniform vec4 u_pt3; // saturation, pixel brightness, full texture, smooth blur
+uniform vec4 u_pt4; // shadows, edge shadow, shadow opacity, shadow blur
+uniform vec2 u_pt_shadow; // shadow offset, 640x480 reference pixels
 varying vec2 v_uv;
 const vec3 offsets = vec3(3.141592654) * vec3(1.0 / 2.0, 1.0 / 2.0 - 2.0 / 3.0, 1.0 / 2.0 - 4.0 / 3.0);
 const vec3 luma_coeff = vec3(0.2126, 0.7152, 0.0722);
@@ -156,6 +163,113 @@ vec3 nearest_bilinear(vec2 uv) {
     vec3 d=texture2D(u_game,pos+stepuv).rgb;
     return mix(mix(a,b,t.x),mix(c,d,t.x),t.y);
 }
+
+/* Pixel Transparency v2.3 by mattakins, Copyright (C) 2025-2026 Matt Akins
+   (github.com/mattakins/Pixel_Transparency), ported to GLES2 as the last
+   step of this pass. `lcd` is the screen shader's result (RetroArch's
+   Source), u_game the unprocessed frame (Original). `p` is the position on
+   the shown picture, 0..1 (vTexCoord); `lo` and `span` map it back to the
+   game texture; `px` is the picture's size in framebuffer pixels
+   (OutputSize). The shadow offset, motion included, arrives from the CPU.
+   Same arithmetic as the slang shader; its two blur shortcuts
+   (collapseShadowAxis) are exact optimizations and are left out. */
+float pt_luma(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+float pt_brightness(vec3 c) {
+    return u_pt1.y < 0.5 ? (c.r + c.g + c.b) / 3.0 : pt_luma(c);
+}
+bool pt_white(vec3 c) {
+    return pt_luma(c) > u_pt0.w && min(min(c.r, c.g), c.b) > u_pt0.w * 0.9;
+}
+float pt_hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+float pt_paper(vec2 p) {
+    p *= 128.0; // uv * scale 0.25 * 512
+    float n = pt_hash(p) * 0.5 + pt_hash(p * 2.0) * 0.25;
+    if (u_pt3.z < 0.5) return n * (7.0 / 6.0);
+    return n + pt_hash(p * 4.0) * 0.125;
+}
+float pt_caster(vec2 p, vec2 lo, vec2 span) {
+    if (any(lessThan(p, vec2(0.0))) || any(greaterThanEqual(p, vec2(1.0)))) {
+        return u_pt4.y;
+    }
+    return 1.0 - pt_brightness(texture2D(u_game, lo + p * span).rgb);
+}
+float pt_alpha(vec3 source, bool white) {
+    float a = u_pt0.y > 0.5 && u_pt0.y < 1.5
+        ? u_pt0.z * pt_brightness(source) * 2.665
+        : pt_brightness(source) / 3.0 + u_pt0.z;
+    return white ? max(a, u_pt1.x) : a;
+}
+vec3 pixel_transparency(vec3 lcd, vec3 orig, vec2 p, vec2 lo, vec2 span, vec2 px) {
+    // Negative pixel brightness dims the screen before compositing.
+    if (u_pt3.y < -0.001) lcd *= max(1.0 + u_pt3.y * pt_luma(lcd), 0.0);
+    vec3 out_c = lcd;
+    bool white = pt_white(orig);
+    bool apply = u_pt0.y < 0.5 ? white : true;
+    if (apply) {
+        float grid = white ? u_pt1.w : u_pt1.z;
+        float alpha = pt_alpha(orig, white);
+        if (grid > 0.0) alpha = mix(alpha, pt_alpha(lcd, white), grid);
+        alpha = clamp(alpha, 0.0, 1.0);
+
+        vec3 back = vec3(u_pt2.z + (pt_paper(p) - 0.4375) * 0.065);
+        if (u_pt4.x > 0.5) {
+            float scale = sqrt(px.x / 640.0 * px.y / 480.0);
+            vec2 texel = 1.0 / px;
+            vec2 at = p - u_pt_shadow * scale * texel;
+            float shadow;
+            if (u_pt4.w > 0.1) {
+                vec2 bx = vec2(u_pt4.w * scale * texel.x, 0.0);
+                vec2 by = vec2(0.0, u_pt4.w * scale * texel.y);
+                float sides = pt_caster(at - bx, lo, span) + pt_caster(at + bx, lo, span)
+                    + pt_caster(at - by, lo, span) + pt_caster(at + by, lo, span);
+                float centre = pt_caster(at, lo, span);
+                if (u_pt3.w > 0.5) {
+                    // 3x3 Gaussian: centre 4, edges 2, corners 1 (of 16).
+                    float corners = pt_caster(at - bx - by, lo, span)
+                        + pt_caster(at + bx - by, lo, span)
+                        + pt_caster(at - bx + by, lo, span)
+                        + pt_caster(at + bx + by, lo, span);
+                    shadow = (centre * 4.0 + sides * 2.0 + corners) / 16.0;
+                } else {
+                    // 5-tap cross: centre 4, sides 2 (of 12).
+                    shadow = (centre * 4.0 + sides * 2.0) / 12.0;
+                }
+            } else {
+                shadow = pt_caster(at, lo, span);
+            }
+            shadow *= u_pt4.z;
+            // Deadzone: near-white casters leave no faint shadow.
+            float deadzone = (1.0 - u_pt0.w) * u_pt4.z;
+            if (deadzone > 0.001) shadow = smoothstep(0.0, deadzone, shadow) * shadow;
+            back = mix(back, back * 0.2, shadow);
+        }
+        if (u_pt2.x > 0.5) {
+            vec3 tint = u_pt2.x < 1.5 ? vec3(0.651, 0.675, 0.518) // Warm 1
+                : u_pt2.x < 2.5 ? vec3(0.72, 0.73, 0.66)          // Warm 2
+                : u_pt2.x < 3.5 ? vec3(0.766, 0.73, 0.763)        // Neutral
+                : vec3(0.76);                                       // Aluminum
+            tint *= 0.675 / max(tint.r, max(tint.g, tint.b));
+            vec3 tinted = clamp(tint + back * 2.0 - 1.0, 0.0, 1.0);
+            back = mix(back, tinted, u_pt2.y);
+        }
+        out_c = mix(lcd, back, alpha);
+    }
+    // Front polarizer, light passing through it twice.
+    if (u_pt2.w > 0.001) out_c *= mix(vec3(1.0), vec3(0.94, 1.0, 0.865), u_pt2.w);
+    if (u_pt3.y > 0.001) out_c = clamp(out_c * (1.0 + u_pt3.y * pt_luma(out_c)), 0.0, 1.0);
+    if (abs(u_pt3.x - 1.0) > 0.001) {
+        out_c = clamp(mix(vec3(pt_luma(out_c)), out_c, u_pt3.x), 0.0, 1.0);
+    }
+    // Anti-banding dither.
+    return out_c + (pt_hash(gl_FragCoord.xy) - 0.5) / 255.0;
+}
+
 void main() {
     vec2 uv = u_uv.xy + v_uv * u_uv.zw;
     vec2 f = fract(uv * u_src);
@@ -263,6 +377,16 @@ void main() {
         c = mix(vec3(luminance), c, 0.80);
         c *= vec3(1.02, 1.00, 0.95);
         c = pow(clamp(c, 0.0, 1.0), vec3(1.05));
+    }
+    if (u_pt0.x > 0.5 && inside) {
+        // The part of the picture this quad shows, in texture and in
+        // framebuffer pixels: borders (Original Ratio) are not picture.
+        vec2 lo = max(u_pic.xy, u_uv.xy);
+        vec2 span = max(min(u_pic.zw, u_uv.xy + u_uv.zw) - lo, vec2(1e-6));
+        vec2 px = max(u_rect.zw * u_fbo * span / u_uv.zw, vec2(1.0));
+        // RetroArch hands the last pass an 8-bit framebuffer.
+        c = pixel_transparency(clamp(c, 0.0, 1.0), texture2D(u_game, uv).rgb,
+                               (uv - lo) / span, lo, span, px);
     }
     FRAG_COLOR = vec4(c * u_bright, 1.0);
 }
