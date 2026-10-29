@@ -18,14 +18,13 @@ class SlotBuildBehaviorDebugTest {
         assertNull(SlotBuildBehavior.externalFolderRestrictionMessage("fyi.slot.konkr"))
     }
 
-    @Test fun emulationLabIsStorageIsolatedFromVerifiedAndBetaSlot() {
+    @Test fun pixelTransparencyTestBuildMayUseChosenFolders() {
         val policy = SlotBuildBehavior.storagePolicy(
             "fyi.slot.konkr.diag", "content://saves", "content://states", true)
-        assertNull(policy.savesRoot)
-        assertNull(policy.statesRoot)
-        assertFalse(policy.shareGbaSaves)
-        assertNotNull(
-            SlotBuildBehavior.externalFolderRestrictionMessage("fyi.slot.konkr.diag"))
+        assertEquals("content://saves", policy.savesRoot)
+        assertEquals("content://states", policy.statesRoot)
+        assertTrue(policy.shareGbaSaves)
+        assertNull(SlotBuildBehavior.externalFolderRestrictionMessage("fyi.slot.konkr.diag"))
     }
 
     @Test fun multiplayerQaInstallIsAlwaysStorageIsolated() {
