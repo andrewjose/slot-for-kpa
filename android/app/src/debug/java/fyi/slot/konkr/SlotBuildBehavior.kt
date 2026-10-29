@@ -34,8 +34,10 @@ internal object SlotBuildBehavior {
         }
     }
 
+    // Pixel Transparency test build: the .diag install may use chosen
+    // save/state folders (point it at a copy). The .lab install stays isolated.
     private fun isolatedLab(packageName: String): Boolean =
-        packageName == "fyi.slot.konkr.lab" || packageName == "fyi.slot.konkr.diag"
+        packageName == "fyi.slot.konkr.lab"
 
     fun storagePolicy(
         packageName: String,
