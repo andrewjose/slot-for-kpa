@@ -72,8 +72,7 @@ class MainActivity : Activity() {
         private const val SENSOR_LIGHT = 4
         private const val FOLDER_REQUEST = 4701
         private const val BIOS_REQUEST = 4702
-        private const val SAVE_REQUEST = 4703
-        private const val STATE_REQUEST = 4704
+        // 4703 / 4704 and 4720..4725: save and save state folders (SaveFolders).
         private const val THEME_REQUEST = 4705
         private const val WALLPAPER_REQUEST = 4706
         private const val LABEL_REQUEST = 4707
@@ -81,9 +80,9 @@ class MainActivity : Activity() {
         private const val PREFS = "slot_konkr_library"
         private const val ROM_ROOT = "rom_root_uri"
         private const val BIOS_ROOT = "bios_root_uri"
-        private const val SAVE_ROOT = "saves_root_uri"
+        private const val SAVE_ROOT = SaveFolders.SAVE_ROOT
         private const val SHARE_GBA_SAVES = "share_gba_saves"
-        private const val STATE_ROOT = "states_root_uri"
+        private const val STATE_ROOT = SaveFolders.STATE_ROOT
         private const val ROM_CACHE_NAME = "rom-library-cache-v1.json"
         private const val ROM_CACHE_SCHEMA = 1
         private const val ROM_CACHE_MAX_BYTES = 8 * 1024 * 1024
@@ -591,8 +590,8 @@ class MainActivity : Activity() {
                     }
                 }
                 4 -> openBiosFolderPicker()
-                5 -> openSharedFolderPicker(SAVE_REQUEST)
-                6 -> openSharedFolderPicker(STATE_REQUEST)
+                5 -> chooseSharedFolder(states = false)
+                6 -> chooseSharedFolder(states = true)
                 7 -> openVisualPicker(THEME_REQUEST)
                 8 -> openVisualPicker(WALLPAPER_REQUEST)
                 9 -> resetVisualFile(THEME_REQUEST)
@@ -1406,10 +1405,12 @@ class MainActivity : Activity() {
                     else -> "mGBA"
                 }
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                // A system's own save / state folder, else the all-systems one.
+                val read = { key: String -> prefs.getString(key, null) }
                 val storage = SlotBuildBehavior.storagePolicy(
                     packageName,
-                    prefs.getString(SAVE_ROOT, null),
-                    prefs.getString(STATE_ROOT, null),
+                    SaveFolders.resolve(read, SAVE_ROOT, ext),
+                    SaveFolders.resolve(read, STATE_ROOT, ext),
                     prefs.getBoolean(SHARE_GBA_SAVES, false)
                 )
                 val saves = storage.savesRoot?.let(Uri::parse)
@@ -2345,8 +2346,74 @@ class MainActivity : Activity() {
         scanFolder(uri)
     }
 
+    /** A chosen folder's short name, or null when it isn't a folder tree. */
+    private fun folderName(uri: String?): String? = uri?.let {
+        try {
+            SaveFolders.shortName(DocumentsContract.getTreeDocumentId(Uri.parse(it)))
+        } catch (error: IllegalArgumentException) {
+            null
+        }
+    }
+
+    /** Library > Save Folder / Save State Folder: one folder for every
+     *  system, or a Game Boy Advance, Game Boy Color or Game Boy folder of
+     *  its own. Each folder keeps RetroArch's per-core subfolders. */
+    private fun chooseSharedFolder(states: Boolean) {
+        SlotBuildBehavior.externalFolderRestrictionMessage(packageName)?.let { restriction ->
+            SlotToast.makeText(this, restriction, Toast.LENGTH_LONG).show()
+            return
+        }
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val base = SaveFolders.base(states)
+        val summary = (listOf("All systems: " + (folderName(prefs.getString(base, null))
+                ?: "not set")) +
+            SaveFolders.Console.entries.map { console ->
+                console.short + ": " +
+                    (folderName(prefs.getString(SaveFolders.key(base, console), null))
+                        ?: "same as all systems")
+            }).joinToString("\n")
+        val dialog = SlotModalDialog(this,
+            if (states) "SAVE STATE FOLDER" else "SAVE FOLDER", summary)
+        dialog.addButton("ALL SYSTEMS") {
+            dialog.dismiss()
+            openSharedFolderPicker(SaveFolders.requestCode(states, null))
+        }
+        for (console in SaveFolders.Console.entries) {
+            dialog.addButton(console.label) {
+                dialog.dismiss()
+                val own = prefs.getString(SaveFolders.key(base, console), null)
+                if (own == null) openSharedFolderPicker(SaveFolders.requestCode(states, console))
+                else chooseConsoleFolder(states, console, own)
+            }
+        }
+        dialog.show()
+    }
+
+    /** A system that already has its own folder: choose another one, or go
+     *  back to the all-systems folder. */
+    private fun chooseConsoleFolder(states: Boolean, console: SaveFolders.Console,
+                                    current: String) {
+        val kind = if (states) "SAVE STATE" else "SAVE"
+        val dialog = SlotModalDialog(this, "${console.short} $kind FOLDER",
+            "Now: " + (folderName(current) ?: "unavailable"))
+        dialog.addButton("CHOOSE ANOTHER FOLDER") {
+            dialog.dismiss()
+            openSharedFolderPicker(SaveFolders.requestCode(states, console))
+        }
+        dialog.addButton("USE ALL SYSTEMS FOLDER") {
+            dialog.dismiss()
+            val saved = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove(SaveFolders.key(SaveFolders.base(states), console)).commit()
+            SlotToast.makeText(this,
+                if (saved) "${console.label} now uses the all systems folder."
+                else "Couldn't save this setting.",
+                Toast.LENGTH_LONG).show()
+        }
+        dialog.show()
+    }
+
     private fun openSharedFolderPicker(requestCode: Int) {
-        check(requestCode == SAVE_REQUEST || requestCode == STATE_REQUEST)
+        check(SaveFolders.request(requestCode) != null)
         SlotBuildBehavior.externalFolderRestrictionMessage(packageName)?.let { restriction ->
             SlotToast.makeText(this, restriction, Toast.LENGTH_LONG).show()
             return
@@ -2654,11 +2721,12 @@ class MainActivity : Activity() {
             if (resultCode == RESULT_OK) data?.data?.let { importVisualFile(requestCode, it) }
             return
         }
-        if (requestCode !in setOf(FOLDER_REQUEST, BIOS_REQUEST,
-                SAVE_REQUEST, STATE_REQUEST) || resultCode != RESULT_OK) return
+        val folderRequest = SaveFolders.request(requestCode)
+        if ((requestCode !in setOf(FOLDER_REQUEST, BIOS_REQUEST) && folderRequest == null) ||
+            resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
-            val writable = requestCode == SAVE_REQUEST || requestCode == STATE_REQUEST
+            val writable = folderRequest != null
             val flags = if (writable) {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             } else {
@@ -2672,13 +2740,14 @@ class MainActivity : Activity() {
                     scanFolder(uri)
                 }
                 BIOS_REQUEST -> importBiosFolder(uri, persistSelection = true)
-                SAVE_REQUEST, STATE_REQUEST -> {
-                    val key = if (requestCode == SAVE_REQUEST) SAVE_ROOT else STATE_ROOT
+                else -> folderRequest?.let { request ->
+                    val key = SaveFolders.key(SaveFolders.base(request.states), request.console)
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString(key, uri.toString()).apply()
-                    val kind = if (requestCode == SAVE_REQUEST) "Save" else "Save State"
+                    val kind = if (request.states) "Save State" else "Save"
                     SlotToast.makeText(this,
-                        "$kind folder selected.",
+                        request.console?.let { "${it.label} ${kind.lowercase()} folder selected." }
+                            ?: "$kind folder selected.",
                         Toast.LENGTH_LONG).show()
                 }
             }

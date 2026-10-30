@@ -88,6 +88,8 @@ In **START → Library**, you can also configure:
 - **Choose Save Folder** — Choose where your game saves are stored.
 - **Choose Save State Folder** — Choose where your save states are stored.
 
+Each of these asks whether the folder is for **All Systems** or only for **Game Boy Advance**, **Game Boy Color** or **Game Boy**. A system's own folder replaces the All Systems folder for that system's games; choose it again to pick another folder or go back to **Use All Systems Folder**. Inside every chosen folder, saves and states keep RetroArch's per-core subfolders (`mGBA`, `gpSP`, `Gambatte`).
+
 **Already using RetroArch?** You can select the same save and save state folders to share compatible saves between both applications.
 
 We'll cover RetroArch compatibility and Syncthing in more detail below.

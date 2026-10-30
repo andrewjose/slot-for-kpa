@@ -5,6 +5,7 @@ This changelog covers the public releases of the dedicated KONKR Pocket Advance 
 ## Unreleased
 
 - **Pixel Transparency** (mattakins, v2.3) after any screen shader: light pixels show the screen's backing, with drop shadows. ON/OFF per system in Settings → Systems and per game in the pause menu's Screen settings; A on its row opens every shader parameter (Color, Transparency, Shadows, Motion, Grid & Quality, Reset to Defaults). Hold Y in a paused game to see changes on the game. With Motion on, shadows follow the accelerometer.
+- Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder now offer All Systems, Game Boy Advance, Game Boy Color or Game Boy. A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems.
 
 ## v1.3.4 — 27 October 2026
 
