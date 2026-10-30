@@ -1,7 +1,9 @@
 # Test build of the Pixel Transparency branch for sideloading on a KONKR.
 # Not part of the pull request: lives only on build/pixel-transparency-apk.
-# The debug APK is "fyi.slot.konkr.diag", signed with Gradle's own debug key,
-# so it installs NEXT TO the official slot. without touching its data.
+# The debug APK is "fyi.slot.konkr.diag", so it installs NEXT TO the official
+# slot. without touching its data. It is signed with the fixed throwaway test
+# key in .github/test-signing (password "android"), so each new test build
+# installs as an update of the previous one.
 name: Pixel Transparency test APK
 
 on:
@@ -67,6 +69,8 @@ jobs:
           echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
           echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
           echo "slot. $name ($code)"
+      - name: Kotlin compile and JVM tests (fail fast, before the cores)
+        run: gradle --no-daemon -p android :app:testDebugUnitTest
       - name: Export Slot keycap graphics for Android Apps
         run: |
           cargo run --locked -p slot-ui --example export_apps_legend -- android/app/src/main/assets/apps_controls
@@ -129,7 +133,12 @@ jobs:
             --source . --built studio-upstream/slot-cart-studio/web
           test -s android/app/src/main/assets/studio/pkg/slot_cart_studio_bg.wasm
 
-      - name: Assemble debug APK (Gradle debug key, side-by-side package)
+      - name: Assemble debug APK (fixed test key, side-by-side package)
+        env:
+          SLOT_SIGNING_STORE_FILE: ${{ github.workspace }}/.github/test-signing/debug.keystore
+          SLOT_SIGNING_STORE_PASSWORD: android
+          SLOT_SIGNING_KEY_ALIAS: androiddebugkey
+          SLOT_SIGNING_KEY_PASSWORD: android
         run: |
           set -euo pipefail
           export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
@@ -137,6 +146,7 @@ jobs:
           APK=android/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | head -1
           unzip -Z -1 "$APK" | grep -Fx lib/arm64-v8a/libslot_android.so
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -i "SHA-256"
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
         with:
