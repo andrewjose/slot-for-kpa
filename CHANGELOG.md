@@ -2,6 +2,10 @@
 
 This changelog covers the public releases of the dedicated KONKR Pocket Advance Android port. Earlier development experiments are preserved in Git history.
 
+## Unreleased
+
+- Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder now offer All Systems, Game Boy Advance, Game Boy Color or Game Boy. A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems.
+
 ## v1.3.4 — 27 October 2026
 
 - Analog stick: the first centred stick event reaches Android again, so its stick-to-D-pad conversion releases the direction (#68).
