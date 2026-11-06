@@ -148,6 +148,12 @@ fn pixel_transparency() {
         ScreenEffect::Agb001,
         ScreenEffect::Ags001,
         ScreenEffect::SharpBilinear,
+        ScreenEffect::ZfastCrt,
+        ScreenEffect::CrtPi,
+        ScreenEffect::CrtGdvMiniUltra,
+        ScreenEffect::CrtGeomDeluxe,
+        ScreenEffect::Fakelottes,
+        ScreenEffect::CrtAperture,
     ] {
         let with = render(&mut gpu, mode, Some(no_shadows()), &white);
         let without = render(&mut gpu, mode, None, &white);

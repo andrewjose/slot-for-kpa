@@ -92,8 +92,9 @@ fn flag(on: bool) -> f32 {
 }
 
 impl PixelTransparency {
-    /// The five packed `u_pt0..u_pt4` vectors of the game shader. The first
-    /// component of `u_pt0` switches the pass on.
+    /// The five packed `u_pt0..u_pt4` vectors of the game shader. The
+    /// program variant switches the pass on; the first component of
+    /// `u_pt0` is 1.0 and unused.
     pub fn uniforms(&self) -> [[f32; 4]; 5] {
         [
             [
@@ -128,9 +129,6 @@ impl PixelTransparency {
             ],
         ]
     }
-
-    /// The uniforms when the pass is off: only the switch is read.
-    pub const OFF: [[f32; 4]; 5] = [[0.0; 4]; 5];
 }
 
 #[cfg(test)]
@@ -160,6 +158,5 @@ mod tests {
         assert_eq!(u[3][2], 0.0);
         assert_eq!(u[3][3], 1.0);
         assert_eq!(u[4], [1.0, 1.0, 0.5, 1.0]);
-        assert_eq!(PixelTransparency::OFF[0][0], 0.0);
     }
 }
