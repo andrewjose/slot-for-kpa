@@ -80,7 +80,7 @@ class MainActivity : Activity() {
         private const val SENSOR_LIGHT = 4
         private const val FOLDER_REQUEST = 4701
         private const val BIOS_REQUEST = 4702
-        // 4703 / 4704 and 4720..4725: save and save state folders (SaveFolders).
+        // 4703 / 4704 and 4720..4731: save and save state folders (SaveFolders).
         private const val THEME_REQUEST = 4705
         private const val WALLPAPER_REQUEST = 4706
         private val WALLPAPER_TARGET_NAME = Regex("[A-Za-z]{1,16}\\.png")
@@ -2488,8 +2488,8 @@ class MainActivity : Activity() {
     }
 
     /** Library > Save Folder / Save State Folder: one folder for every
-     *  system, or a Game Boy Advance, Game Boy Color or Game Boy folder of
-     *  its own. Each folder keeps RetroArch's per-core subfolders. */
+     *  system, or a folder of one system's own. Each folder keeps
+     *  RetroArch's per-core subfolders. */
     private fun chooseSharedFolder(states: Boolean) {
         SlotBuildBehavior.externalFolderRestrictionMessage(packageName)?.let { restriction ->
             SlotToast.makeText(this, restriction, Toast.LENGTH_LONG).show()
@@ -2497,25 +2497,36 @@ class MainActivity : Activity() {
         }
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         val base = SaveFolders.base(states)
-        val summary = (listOf("All systems: " + (folderName(prefs.getString(base, null))
-                ?: "not set")) +
-            SaveFolders.Console.entries.map { console ->
-                console.short + ": " +
-                    (folderName(prefs.getString(SaveFolders.key(base, console), null))
-                        ?: "same as all systems")
-            }).joinToString("\n")
+        val own = SaveFolders.Console.entries
+            .filter { prefs.getString(SaveFolders.key(base, it), null) != null }
+            .joinToString(", ") { it.short }
+        val summary = "All systems: " + (folderName(prefs.getString(base, null)) ?: "not set") +
+            "\nOwn folder: " + own.ifEmpty { "none" }
         val dialog = SlotModalDialog(this,
             if (states) "SAVE STATE FOLDER" else "SAVE FOLDER", summary)
         dialog.addButton("ALL SYSTEMS") {
             dialog.dismiss()
             openSharedFolderPicker(SaveFolders.requestCode(states, null))
         }
+        dialog.addButton("ONE SYSTEM") {
+            dialog.dismiss()
+            chooseFolderConsole(states)
+        }
+        dialog.show()
+    }
+
+    /** Which system gets a folder of its own. */
+    private fun chooseFolderConsole(states: Boolean) {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val base = SaveFolders.base(states)
+        val dialog = SlotModalDialog(this, "CHOOSE A SYSTEM",
+            "Its folder replaces the All Systems folder for its games.")
         for (console in SaveFolders.Console.entries) {
             dialog.addButton(console.label) {
                 dialog.dismiss()
-                val own = prefs.getString(SaveFolders.key(base, console), null)
-                if (own == null) openSharedFolderPicker(SaveFolders.requestCode(states, console))
-                else chooseConsoleFolder(states, console, own)
+                val current = prefs.getString(SaveFolders.key(base, console), null)
+                if (current == null) openSharedFolderPicker(SaveFolders.requestCode(states, console))
+                else chooseConsoleFolder(states, console, current)
             }
         }
         dialog.show()

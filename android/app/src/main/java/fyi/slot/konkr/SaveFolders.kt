@@ -1,29 +1,42 @@
 package fyi.slot.konkr
 
+import java.util.Locale
+
 /**
  * Save and save state folders: one for all systems, and optionally a
- * Game Boy Advance, Game Boy Color or Game Boy folder that takes its place
- * for that system's games. Inside any chosen folder the layout stays
- * RetroArch's "sort by core" one: <folder>/mGBA/, /gpSP/ or /Gambatte/.
+ * folder of each system's own that takes its place for that system's
+ * games. Inside any chosen folder the layout stays RetroArch's "sort by
+ * core" one: <folder>/mGBA/, /Gambatte/, /Snes9x/ and so on.
  */
 internal object SaveFolders {
     const val SAVE_ROOT = "saves_root_uri"
     const val STATE_ROOT = "states_root_uri"
     const val SAVE_REQUEST = 4703
     const val STATE_REQUEST = 4704
-    /** Six codes from here: GBA, GBC, GB saves, then GBA, GBC, GB states. */
+    /** One code per system from here for saves, then one each for states. */
     private const val SYSTEM_REQUEST = 4720
 
-    enum class Console(val ext: String, val label: String, val short: String) {
-        GBA("gba", "Game Boy Advance", "GBA"),
-        GBC("gbc", "Game Boy Color", "GBC"),
-        GB("gb", "Game Boy", "GB");
+    enum class Console(val platform: String, val label: String, val short: String) {
+        GBA(Systems.GBA, "Game Boy Advance", "GBA"),
+        GBC(Systems.GBC, "Game Boy Color", "GBC"),
+        GB(Systems.GB, "Game Boy", "GB"),
+        NES(Systems.NES, "NES", "NES"),
+        SNES(Systems.SNES, "Super Nintendo", "SNES"),
+        MD(Systems.MD, "Mega Drive", "MD");
+
+        /** Preference name suffix: gba, gbc and gb as in the first builds. */
+        val suffix: String get() = platform.lowercase(Locale.ROOT)
 
         companion object {
+            /** The system of a ROM extension, as Systems files it. */
             fun forExtension(ext: String): Console? =
-                entries.firstOrNull { it.ext.equals(ext, ignoreCase = true) }
+                Systems.platformFor(ext)?.let { platform ->
+                    entries.firstOrNull { it.platform == platform }
+                }
         }
     }
+
+    private val CONSOLES = Console.entries.size
 
     /** A folder picker request: saves or states, for one system or all. */
     data class Request(val states: Boolean, val console: Console?)
@@ -32,19 +45,19 @@ internal object SaveFolders {
 
     /** The preference holding a folder: all systems, or one system's own. */
     fun key(base: String, console: Console?): String =
-        if (console == null) base else "${base}_${console.ext}"
+        if (console == null) base else "${base}_${console.suffix}"
 
     fun requestCode(states: Boolean, console: Console?): Int = when (console) {
         null -> if (states) STATE_REQUEST else SAVE_REQUEST
-        else -> SYSTEM_REQUEST + (if (states) 3 else 0) + console.ordinal
+        else -> SYSTEM_REQUEST + (if (states) CONSOLES else 0) + console.ordinal
     }
 
     fun request(code: Int): Request? = when (code) {
         SAVE_REQUEST -> Request(false, null)
         STATE_REQUEST -> Request(true, null)
-        in SYSTEM_REQUEST until SYSTEM_REQUEST + 6 -> {
+        in SYSTEM_REQUEST until SYSTEM_REQUEST + 2 * CONSOLES -> {
             val index = code - SYSTEM_REQUEST
-            Request(index >= 3, Console.entries[index % 3])
+            Request(index >= CONSOLES, Console.entries[index % CONSOLES])
         }
         else -> null
     }
