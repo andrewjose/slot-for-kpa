@@ -52,7 +52,27 @@ class SaveFoldersTest {
         }
         assertNull(SaveFolders.request(4701))
         assertNull(SaveFolders.request(4719))
-        assertNull(SaveFolders.request(4726))
+        assertNull(SaveFolders.request(4732))
+    }
+
+    @Test fun homeConsolesHaveTheirOwnFoldersForEveryExtension() {
+        prefs[SaveFolders.SAVE_ROOT] = "content://all"
+        prefs["saves_root_uri_nes"] = "content://nes"
+        prefs["saves_root_uri_snes"] = "content://snes"
+        prefs["saves_root_uri_md"] = "content://md"
+        for (ext in listOf("nes", "fc", "unf", "unif")) {
+            assertEquals("content://nes", folder(SaveFolders.SAVE_ROOT, ext))
+        }
+        for (ext in listOf("sfc", "smc")) {
+            assertEquals("content://snes", folder(SaveFolders.SAVE_ROOT, ext))
+        }
+        for (ext in listOf("md", "gen", "smd", "bin")) {
+            assertEquals("content://md", folder(SaveFolders.SAVE_ROOT, ext))
+        }
+        // The handhelds still use the all-systems folder.
+        assertEquals("content://all", folder(SaveFolders.SAVE_ROOT, "gba"))
+        assertEquals(SaveFolders.Console.SNES, SaveFolders.Console.forExtension("SMC"))
+        assertNull(SaveFolders.Console.forExtension("zip"))
     }
 
     @Test fun folderNamesAreShortAndReadable() {
