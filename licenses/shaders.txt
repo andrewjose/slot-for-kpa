@@ -24,6 +24,17 @@ Slot GLES2 ports of multi-pass shaders are approximations until pixel parity
 is validated on KONKR. Preset parameter values are preserved.
 Source: https://github.com/libretro/glsl-shaders/tree/master/handheld
 
+CRT shaders for the NES, Super Nintendo and Mega Drive, one pass each:
+zfast_crt by Greg Hogan (SoltanGris42), copyright (C) 2017. GPLv2-or-later.
+crt-pi by davej, copyright (C) 2015-2016. GPLv2-or-later.
+crt-gdv-mini(-ultra) by guest(r), copyright (C) 2017-2018, with Dr. Venom
+and metallic77. GPLv2-or-later. Trinitron preset, no curvature.
+CRT Geom Deluxe from the crt-geom family by cgwg and others. GPL.
+No curvature.
+fakelottes by hunterk, after crt-lottes by Timothy Lottes. No curvature.
+crt-aperture by EasyMode. GPL.
+Source: https://github.com/libretro/glsl-shaders/tree/master/crt
+
 Pixel Transparency v2.3 by mattakins, Copyright (C) 2025-2026 Matt Akins.
 https://github.com/mattakins/Pixel_Transparency
 Ported to GLES2 as the last step of slot.'s game pass, after the screen
