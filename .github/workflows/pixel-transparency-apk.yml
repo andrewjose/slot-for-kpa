@@ -1,9 +1,12 @@
-# Test build of the Pixel Transparency branch for sideloading on a KONKR.
-# Not part of the pull request: lives only on build/pixel-transparency-apk.
+# Test build of the Pixel Transparency and per-system save folder branches,
+# on upstream v2.0.0, for sideloading on a KONKR. Not part of either pull
+# request: lives only on build/pixel-transparency-apk.
 # The debug APK is "fyi.slot.konkr.diag", so it installs NEXT TO the official
 # slot. without touching its data. It is signed with the fixed throwaway test
 # key in .github/test-signing (password "android"), so each new test build
-# installs as an update of the previous one.
+# installs as an update of the previous one. Steps are upstream's production
+# workflow minus its tests; ScreenScraper secrets are upstream's own, so this
+# build fetches no NES/SNES/Mega Drive labels.
 name: Pixel Transparency test APK
 
 on:
@@ -17,7 +20,7 @@ permissions:
 jobs:
   debug-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       ANDROID_HOME: /usr/local/lib/android/sdk
@@ -81,8 +84,8 @@ jobs:
               data = (Path('android/app/src/main/assets/apps_controls') / f'{name}.png').read_bytes()
               assert data[:8] == bytes((137, 80, 78, 71, 13, 10, 26, 10))
               width, height = struct.unpack('>II', data[16:24])
-              # Drawn at the KONKR's 4/3 panel density: Slot's 24px band.
-              assert width > 20 and height == 32, (name, width, height)
+              # Drawn at 3x: Slot's 24px band.
+              assert width > 45 and height == 72, (name, width, height)
               print(f'Verified Slot legend {name}: {width}x{height}')
           PY
       - name: Install cargo-ndk
@@ -99,6 +102,12 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
           bash scripts/build-gambatte-android.sh
+      - name: Build NES, SNES and Mega Drive arm64 libretro cores
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          for core in fceumm nestopia snes9x bsnes genesis_plus_gx picodrive; do
+            bash scripts/build-home-core-android.sh "$core"
+          done
       - name: Checkout official Slot revision required by Cart Studio
         uses: actions/checkout@v4
         with:
@@ -113,6 +122,8 @@ jobs:
           # Isolate the pinned upstream Cargo project from our parent workspace.
           # This edit affects the ephemeral CI copy only; vendored sources stay exact.
           printf '\n[workspace]\n' >> studio-upstream/slot-cart-studio/Cargo.toml
+          # NES, Super Nintendo and Mega Drive carts, by checked replacements.
+          python3 scripts/stage-konkr-cart-studio.py --studio studio-upstream/slot-cart-studio
           test "$(tr -d '\r\n' < studio-upstream/slot-cart-studio/slot.ref)" = \
                "$(git -C studio-upstream/slot rev-parse HEAD)"
           node --test studio-upstream/slot-cart-studio/web/*.test.mjs
@@ -127,6 +138,7 @@ jobs:
       - name: Build and package genuine Cart Studio HTML/JS/WASM in APK assets
         run: |
           set -euo pipefail
+          (cd studio-upstream/slot-cart-studio && cargo test --lib konkr_home)
           (cd studio-upstream/slot-cart-studio && \
             wasm-pack build --release --target web --no-typescript --out-dir web/pkg)
           python3 scripts/package-konkr-cart-studio.py \
@@ -145,7 +157,11 @@ jobs:
           bash scripts/build-konkr-android.sh
           APK=android/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | head -1
-          unzip -Z -1 "$APK" | grep -Fx lib/arm64-v8a/libslot_android.so
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='fyi.slot.konkr.diag'"
+          for core in slot_android mgba_libretro gpsp_libretro gambatte_libretro fceumm_libretro nestopia_libretro snes9x_libretro bsnes_libretro genesis_plus_gx_libretro picodrive_libretro; do
+            unzip -Z -1 "$APK" | grep -Fx "lib/arm64-v8a/lib${core}.so"
+          done
+          unzip -Z -1 "$APK" | grep -Fx 'assets/studio/pkg/slot_cart_studio_bg.wasm'
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -i "SHA-256"
           sha256sum "$APK"
       - uses: actions/upload-artifact@v4
