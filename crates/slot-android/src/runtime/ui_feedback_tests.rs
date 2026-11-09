@@ -33,7 +33,6 @@ fn pixel_transparency_rows_fit_every_systems_and_screen_page() {
                 (Engine::system_rows_on(platform, panel), Engine::system_keys_on(platform, panel)),
             ] {
                 assert_eq!(rows.len(), keys.len(), "{platform:?} on {panel:?}");
-                assert!(rows.len() <= 6, "{platform:?} on {panel:?}: a page holds six rows");
                 if matches!(platform, Platform::Nes | Platform::Snes | Platform::Md) {
                     assert!(!rows.contains(&PT_ROW), "{platform:?}: handheld LCDs only");
                     assert!(!keys.iter().copied().any(pt_key));
@@ -47,6 +46,14 @@ fn pixel_transparency_rows_fit_every_systems_and_screen_page() {
                 assert!(settings.pixel_transparency_for(platform), "{platform:?} row sets its own system");
             }
         }
+    }
+    // Systems pages scroll: Pixel Transparency is the last screen row, then
+    // Frame Blending and Controls.
+    for platform in [Platform::Gba, Platform::Gbc, Platform::Gb] {
+        let rows = Engine::system_page_rows(platform);
+        assert_eq!(&rows[rows.len() - 3..], &[PT_ROW, 126, 125], "{platform:?}");
+        let keys = Engine::system_page_keys(platform);
+        assert!(pt_key(keys[keys.len() - 3]));
     }
     // Every Pixel Transparency string has its own texture after MENU_TEXT.
     let texts: Vec<&str> = pt_texts().collect();
