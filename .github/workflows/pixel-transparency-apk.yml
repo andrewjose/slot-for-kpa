@@ -1,5 +1,5 @@
 # Test build of the Pixel Transparency and per-system save folder branches,
-# on upstream v2.0.0, for sideloading on a KONKR. Not part of either pull
+# on upstream v2.1.1, for sideloading on a KONKR. Not part of either pull
 # request: lives only on build/pixel-transparency-apk.
 # The debug APK is "fyi.slot.konkr.diag", so it installs NEXT TO the official
 # slot. without touching its data. It is signed with the fixed throwaway test
@@ -151,8 +151,12 @@ jobs:
           SLOT_SIGNING_STORE_PASSWORD: android
           SLOT_SIGNING_KEY_ALIAS: androiddebugkey
           SLOT_SIGNING_KEY_PASSWORD: android
+          # Internet Multiplayer relay (tools/slot-relay), host[:port], as
+          # upstream's release build: a repository Actions variable.
+          SLOT_RELAY_ADDR: ${{ vars.SLOT_RELAY_ADDR }}
         run: |
           set -euo pipefail
+          test -n "$SLOT_RELAY_ADDR" || echo "::warning::SLOT_RELAY_ADDR not set: this APK cannot play Internet Multiplayer"
           export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
           bash scripts/build-konkr-android.sh
           APK=android/app/build/outputs/apk/debug/app-debug.apk

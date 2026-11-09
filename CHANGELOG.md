@@ -5,7 +5,28 @@ This changelog covers the public releases of slot. for Android, an Android port 
 ## Unreleased
 
 - **Pixel Transparency** (mattakins, v2.3) after any screen shader: light pixels show the screen's backing, with drop shadows. ON/OFF per system (GBA, GBC, GB) in Settings → Systems and per game in the pause menu's Screen settings; A on its row opens every shader parameter (Color, Transparency, Shadows, Motion, Grid & Quality, Reset to Defaults). Hold Y in a paused game to see changes on the game. With Motion on, shadows follow the accelerometer.
-- Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder offer All Systems or One System (GBA, GBC, GB, NES, Super Nintendo, Mega Drive). A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems.
+- Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder offer All Systems or One System (GBA, GBC, GB, NES, Super Nintendo, Mega Drive). A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems. A system's folder receives only that system's saves or states when chosen (by core, or by the library game for mGBA and Gambatte); the All Systems folder the rest.
+
+## v2.1.1 — 8 November 2026
+
+- Game Boy / Game Boy Color labels: art.slot-cfw.fyi serves WebP (its index still names .png); the art proxy asks for <art>.webp first, then <art>.png, and converts to PNG for the automatic labels and Cart Studio.
+- Settings → Controls: A, Up and Down can't be cleared or left keyless by a swap (slot.'s menus need them); a controller saved by 2.1.0 without one gets its own key back on load.
+- Choosing a save or state folder copies slot.'s saves and RTCs, or auto-states and the manual slots mirroring the Polaroids (with their pictures), in RetroArch's layout; for files the folder holds differently the player keeps slot.'s (folder's kept as .before-transfer-<date>) or the folder's (slot.'s kept as .slot-<date>).
+- Cart Studio: a fully opaque PNG picked as Custom logo is used as the Custom label.
+
+## v2.1.0 — 6 November 2026
+
+The repository is renamed slot-for-android: releases are tagged vX.Y.Z with slot-for-android-X.Y.Z-arm64.apk, and the updater asks slot-for-android directly (2.0 follows GitHub's redirect; 1.3 needs one manual install).
+
+- Multiplayer over the Internet (WAN, beta) next to LAN: relay server (tools/slot-relay, one-command installer), four-digit room codes, Y Share, round-trip based input delay; Gambatte's Game Boy link stays on LAN. L1 / R1 switch LAN / WAN, shown by a house / globe slide switch.
+- Settings → Controls: Port 1 / Port 2 controllers with their own bindings, player 2 on NES/SNES/Mega Drive through libretro port 2 (real, Run-Ahead and Preemptive frames); Hotkeys with SELECT, L3 or R3 as Hotkey Button, fixed fast-forward, rewind and Boktai sun; Reset to Default.
+- Systems → [system] → Controls and the in-game Controls: console button layout per port, X / Y roles (GBA, GB, GBC, NES) and L1 / R1 roles (GB, GBC, NES), per system or per game.
+- In-game Screen menu over the paused game with the slot rising (slot. v1.14 animations), Hotkey + Y to open and close it, live shader / color correction / palette / overlay, L1 / R1 screen size on every system; the other in-game pages are opaque. Color Correction has no default hotkey.
+- Frame Blending per system: Off, Mix, Ghosting (mGBA, Gambatte and gpSP core options; slot.'s own blend for NES, SNES and Mega Drive).
+- Game menu after 120 ms with a 100 ms fade; a double tap opens Save States without the menu showing first; B in Save States opened from the menu returns to it.
+- Menus show six rows and scroll; settings labels give way to their values on narrow screens; Multiplayer keycaps tighten (then drop "Swap") when too wide.
+- Shaders: Grid as slot. original with Pixel AA; LCD Grid V2 smear range in texels per screen pixel as upstream; AGB-001 / AGS-001 emulate upstream's 4x pass filtered to the screen.
+- Settings order: General, Systems, Gameplay, Emulation, Controls, Status Bar. Systems pages titled with their system. No LABELS flash after an eject.
 
 ## v2.0.0 — 5 November 2026
 
