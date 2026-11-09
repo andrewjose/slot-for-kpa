@@ -1,5 +1,6 @@
 package fyi.slot.konkr
 
+import fyi.slot.konkr.SaveFolders.Console
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -105,34 +106,32 @@ class SaveFoldersTest {
     @Test fun aSaveBelongsToItsCoresSystemOrItsLibraryGame() {
         fun of(core: String, name: String, states: Boolean = false) =
             SaveFolders.consolesOf(core, SaveFolders.stemOf(name, states), library)
-        val c = SaveFolders.Console
         // One system per core: the core decides, library or not.
-        assertEquals(setOf(c.GBA), of("gpSP", "Anything.srm"))
-        assertEquals(setOf(c.SNES), of("Snes9x", "Chrono Trigger.srm"))
-        assertEquals(setOf(c.MD), of("Genesis Plus GX", "Phantasy Star IV.srm"))
+        assertEquals(setOf(Console.GBA), of("gpSP", "Anything.srm"))
+        assertEquals(setOf(Console.SNES), of("Snes9x", "Chrono Trigger.srm"))
+        assertEquals(setOf(Console.MD), of("Genesis Plus GX", "Phantasy Star IV.srm"))
         // mGBA and Gambatte: the library game of that name.
-        assertEquals(setOf(c.GBA), of("mGBA", "Pokemon Emerald.srm"))
-        assertEquals(setOf(c.GBC), of("mGBA", "Link's Awakening DX.rtc"))
-        assertEquals(setOf(c.GBC), of("Gambatte", "Link's Awakening DX.state1.png", true))
-        assertEquals(setOf(c.GB), of("Gambatte", "Wario Land.state.auto", true))
-        assertEquals(setOf(c.GB, c.GBC), of("mGBA", "Tetris.srm"))
+        assertEquals(setOf(Console.GBA), of("mGBA", "Pokemon Emerald.srm"))
+        assertEquals(setOf(Console.GBC), of("mGBA", "Link's Awakening DX.rtc"))
+        assertEquals(setOf(Console.GBC), of("Gambatte", "Link's Awakening DX.state1.png", true))
+        assertEquals(setOf(Console.GB), of("Gambatte", "Wario Land.state.auto", true))
+        assertEquals(setOf(Console.GB, Console.GBC), of("mGBA", "Tetris.srm"))
         // A GBA game's name in Gambatte's folder can't be a GBA save.
         assertEquals(emptySet<SaveFolders.Console>(), of("Gambatte", "Pokemon Emerald.srm"))
         assertEquals(emptySet<SaveFolders.Console>(), of("mGBA", "Deleted Game.srm"))
     }
 
     @Test fun aNewFolderGetsOnlyItsOwnSystemsFiles() {
-        val c = SaveFolders.Console
-        val own = setOf(c.GBA, c.SNES)
+        val own = setOf(Console.GBA, Console.SNES)
         // A system's own folder: only that system's files.
-        assertTrue(SaveFolders.transfers(c.GBA, own, setOf(c.GBA)))
-        assertFalse(SaveFolders.transfers(c.GBA, own, setOf(c.GB)))
-        assertFalse(SaveFolders.transfers(c.GBA, own, emptySet()))
-        assertTrue(SaveFolders.transfers(c.GB, own, setOf(c.GB, c.GBC)))
+        assertTrue(SaveFolders.transfers(Console.GBA, own, setOf(Console.GBA)))
+        assertFalse(SaveFolders.transfers(Console.GBA, own, setOf(Console.GB)))
+        assertFalse(SaveFolders.transfers(Console.GBA, own, emptySet()))
+        assertTrue(SaveFolders.transfers(Console.GB, own, setOf(Console.GB, Console.GBC)))
         // All Systems: everything except systems with their own folder.
-        assertFalse(SaveFolders.transfers(null, own, setOf(c.GBA)))
-        assertTrue(SaveFolders.transfers(null, own, setOf(c.GB)))
+        assertFalse(SaveFolders.transfers(null, own, setOf(Console.GBA)))
+        assertTrue(SaveFolders.transfers(null, own, setOf(Console.GB)))
         assertTrue(SaveFolders.transfers(null, own, emptySet()))
-        assertTrue(SaveFolders.transfers(null, emptySet(), setOf(c.SNES)))
+        assertTrue(SaveFolders.transfers(null, emptySet(), setOf(Console.SNES)))
     }
 }
