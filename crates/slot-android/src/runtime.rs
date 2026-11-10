@@ -4494,8 +4494,10 @@ impl Engine {
     /// Whether this cartridge shows Pixel Transparency: its own choice from
     /// the pause menu, else its system's. No Settings clone: runs per frame.
     fn pt_on(&self) -> bool {
-        self.game_emulation.and_then(|p| p.pixel_transparency_override)
-            .unwrap_or_else(|| self.settings.pixel_transparency_for(self.current_cart_platform()))
+        let platform = self.current_cart_platform();
+        matches!(platform, Platform::Gba | Platform::Gbc | Platform::Gb)
+            && self.game_emulation.and_then(|p| p.pixel_transparency_override)
+                .unwrap_or_else(|| self.settings.pixel_transparency_for(platform))
     }
     fn push_pixel_transparency(&mut self) {
         let pt = self.pt_on().then(|| self.settings.pixel_transparency
@@ -4521,10 +4523,53 @@ impl Engine {
         matches!(self.overlay, ShelfOverlay::PixelTransparency { page: Some(_), .. })
     }
 
+    /// The game's own size choice (or its system's), as saved.
+    fn chosen_video_mode(&self) -> VideoMode {
+        let platform = self.current_cart_platform();
+        let name = self.shelves[self.active].carts
+            .get(self.shelves[self.active].index)
+            .map_or("", |cart| cart.stem.as_str());
+        PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+            .map_or(video_mode::default_mode(platform, panel_size()),
+                |(root, _)| video_mode::video_mode_for(root, name, platform, panel_size()))
+    }
+
+    /// Pixel Transparency draws on whole pixels: while it is on the game
+    /// plays at Integer, whatever size was chosen. The choice itself is
+    /// kept, and comes back when Pixel Transparency goes off. Each change
+    /// of size shows its banner.
+    fn keep_pt_integer(&mut self) {
+        if self.game.is_none() { return; }
+        let Some(wanted) = self.pt_video_mode() else { return };
+        self.video_mode = wanted;
+        self.apply_video_geometry();
+        let toast = if self.pt_on() { Toast::ScreenIntegerPt } else { self.video_mode_toast() };
+        self.hud.toast(toast, self.born.elapsed().as_millis() as u64);
+        self.tell_hidden_bezel();
+    }
+
+    /// The size the game should switch to now that Pixel Transparency is
+    /// on (Integer) or off (the chosen size), if it isn't there already.
+    fn pt_video_mode(&self) -> Option<VideoMode> {
+        let wanted = if self.pt_on() { VideoMode::Actual } else { self.chosen_video_mode() };
+        // GBA on the KONKR has a single size (set_video_mode's rule).
+        let single = self.current_cart_platform() == Platform::Gba && !fitted_canvas();
+        (wanted != self.video_mode && !single).then_some(wanted)
+    }
+
+    /// A size change while Pixel Transparency holds the game at Integer:
+    /// refused, with its banner.
+    fn pt_holds_integer(&mut self) -> bool {
+        if !self.pt_on() { return false; }
+        self.hud.toast(Toast::ScreenIntegerPt, self.born.elapsed().as_millis() as u64);
+        true
+    }
+
     /// The top banner naming the new screen size.
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
     fn step_screen_size(&mut self, bigger: bool) {
+        if self.pt_holds_integer() { return; }
         let mode = if bigger { self.video_mode.bigger() } else { self.video_mode.smaller() };
         if mode == self.video_mode { return; }
         self.set_video_mode(mode);
@@ -4767,8 +4812,21 @@ impl Engine {
             self.system_video_modes=Platform::ALL.map(|platform| video_mode::system_mode(&storage,platform,panel_size()));
         }
     }
+    /// On the Systems page, Pixel Transparency just turned on for a system
+    /// whose Screen Size isn't Integer: its games will play at Integer.
+    fn tell_pt_integer(&self) {
+        let ShelfOverlay::ScreenSystemSettings { platform, .. } = self.overlay else { return };
+        if !self.settings.pixel_transparency_for(platform) { return; }
+        if self.system_video_modes[platform as usize] == VideoMode::Actual { return; }
+        set_message("Pixel Transparency plays these games at Integer size.".into());
+    }
+
     /// Settings > Systems' Screen Size: Integer, Original Ratio, Stretch.
     fn cycle_system_video_mode(&mut self, platform: Platform, right: bool) {
+        if self.settings.pixel_transparency_for(platform) {
+            set_message("Screen Size stays Integer while Pixel Transparency is on.".into());
+            return;
+        }
         let at=platform as usize;
         let now=self.system_video_modes[at];
         let mode=if right { now.bigger() } else { now.smaller() };
@@ -4940,6 +4998,7 @@ impl Engine {
             return;
         }
         if key == SCREEN_SIZE_KEY {
+            if self.pt_holds_integer() { return; }
             let mode = if right { self.video_mode.bigger() } else { self.video_mode.smaller() };
             if mode != self.video_mode {
                 self.set_video_mode(mode);
@@ -4992,6 +5051,7 @@ impl Engine {
         let view=self.game_settings();
         if matches!(key,0|1|21|32|33|34|47|48|49) {
             self.sync_screen_effect();
+            if pt_key(key) { self.keep_pt_integer(); }
         }
         // A shader change can switch to/from a preset with its own GBA Color.
         // Recompute core colour here as well as when the correction toggle moves.
@@ -5460,7 +5520,11 @@ impl Engine {
             return;
         }
         if !self.settings.change(key, right) { return; }
-        if pt_key(key) { self.sync_screen_effect(); }
+        if pt_key(key) {
+            self.sync_screen_effect();
+            self.keep_pt_integer();
+            self.tell_pt_integer();
+        }
         // Clock formatting can change independently of Android's next
         // status event. Force one re-render of the existing clock value.
         if key == 28 { self.last_system_status_rev = 0; }
@@ -5573,6 +5637,8 @@ impl Engine {
             self.game_settings()
         } else { self.settings.clone() };
         let video = match self.overlay {
+            ShelfOverlay::ScreenSystemSettings { platform, .. }
+                if self.settings.pixel_transparency_for(platform) => VideoMode::Actual,
             ShelfOverlay::ScreenSystemSettings { platform, .. } =>
                 self.system_video_modes[platform as usize],
             _ => self.video_mode,
@@ -6842,14 +6908,10 @@ impl Engine {
                     self.sync_screen_effect();
                     // The exact Slot upstream geometry: GB/GBC 160x144
                     // is centred within the 240x160 libretro canvas.
-                    let name = self.shelves[self.active].carts
-                        .get(self.shelves[self.active].index)
-                        .map_or("", |cart| cart.stem.as_str());
-                    let platform = self.current_cart_platform();
-                    self.video_mode = PATHS.lock().unwrap_or_else(|e| e.into_inner())
-                        .as_ref().map_or(video_mode::default_mode(platform, panel_size()),
-                            |(root, _)| video_mode::video_mode_for(root, name, platform, panel_size()));
+                    // Pixel Transparency holds the game at Integer.
+                    self.video_mode = self.chosen_video_mode();
                     self.apply_video_geometry();
+                    self.keep_pt_integer();
                     self.screen_power = 0.0;
                     self.exiting_screen = false;
                     self.gpu.set_screen_power(0.0);

@@ -647,3 +647,55 @@ fn pixel_transparency_menus_edit_the_shared_parameters() {
     key(&mut engine, 108);
     assert_eq!(engine.overlay, ShelfOverlay::None);
 }
+
+#[test]
+fn pixel_transparency_holds_games_at_integer() {
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    let cart = |platform, stem: &str| Cart {
+        platform, stem: stem.into(), title: stem.into(),
+        code: String::new(), rom: PathBuf::new(), label: None, shell: None, battery: false,
+    };
+    engine.active = 0;
+    engine.shelves[0].carts = vec![cart(Platform::Gbc, "Color"), cart(Platform::Nes, "Famicom")];
+    engine.shelves[0].index = 0;
+    engine.video_mode = VideoMode::Aspect;
+    let now = |engine: &Engine| engine.born.elapsed().as_millis() as u64;
+
+    // Off: the game keeps its own size, and L1/R1 change it.
+    assert!(!engine.pt_on());
+    let chosen = engine.chosen_video_mode();
+    assert_eq!(engine.pt_video_mode(), (chosen != VideoMode::Aspect).then_some(chosen));
+
+    // On: Integer, and size changes are refused with the banner.
+    engine.settings.pixel_transparency_gbc = true;
+    assert!(engine.pt_on());
+    assert_eq!(engine.pt_video_mode(), Some(VideoMode::Actual));
+    engine.step_screen_size(true);
+    assert_eq!(engine.video_mode, VideoMode::Aspect, "no size change while it is on");
+    assert_eq!(engine.hud.said(now(&engine)), Some(Toast::ScreenIntegerPt));
+    engine.video_mode = VideoMode::Actual;
+    assert_eq!(engine.pt_video_mode(), None, "already Integer: no second banner");
+
+    // A per-game override counts, but never on a home console.
+    let mut profile = EmulationProfile::from_settings(&engine.settings);
+    profile.pixel_transparency_override = Some(false);
+    engine.game_emulation = Some(profile);
+    assert!(!engine.pt_on(), "this game turned it off");
+    profile.pixel_transparency_override = Some(true);
+    engine.game_emulation = Some(profile);
+    engine.shelves[0].index = 1;
+    assert!(!engine.pt_on(), "NES has no Pixel Transparency");
+    engine.game_emulation = None;
+
+    // Settings > Systems: the size shows Integer and stays there.
+    let at = Platform::Gbc as usize;
+    engine.system_video_modes[at] = VideoMode::Stretch;
+    engine.overlay = ShelfOverlay::ScreenSystemSettings { platform: Platform::Gbc, row: 0 };
+    assert_eq!(engine.setting_value(SCREEN_SIZE_KEY), Some(SCREEN_SIZE_VALUE));
+    engine.cycle_system_video_mode(Platform::Gbc, false);
+    assert_eq!(engine.system_video_modes[at], VideoMode::Stretch, "the choice is kept");
+    engine.settings.pixel_transparency_gbc = false;
+    assert_eq!(engine.setting_value(SCREEN_SIZE_KEY), Some(SCREEN_SIZE_VALUE + 2),
+        "off again: the system's own size");
+}
