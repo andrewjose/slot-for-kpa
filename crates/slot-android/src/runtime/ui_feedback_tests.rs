@@ -572,7 +572,9 @@ fn playstation_pages_and_its_rewind_default() {
     assert!(engine.settings.change(70, true));
     assert_eq!(engine.settings.shader_psx, crate::settings::Shader::ZfastCrt);
     assert_eq!(engine.settings.shader_md, crate::settings::Shader::ZfastCrt, "untouched default");
+}
 
+#[test]
 fn an_lcd_effect_holds_games_at_integer() {
     use crate::settings::LcdEffect;
     let _surface = slot_gfx::TestEgl::new();
