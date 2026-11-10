@@ -36,6 +36,7 @@ class RomFoldersTest {
         assertNull(RomFolders.request(RomFolders.requestCode(System.GBA) - 1))
         assertNull(RomFolders.request(RomFolders.requestCode(System.entries.last()) + 1))
         assertEquals(System.MD, System.of(Systems.MD))
+        assertEquals(System.PSX, System.of(Systems.PSX))
     }
 
     @Test fun aSystemsOwnFolderReplacesAllSystemsForItsGames() {

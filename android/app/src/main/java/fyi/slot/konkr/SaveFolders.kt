@@ -24,7 +24,8 @@ internal object SaveFolders {
         GB(Systems.GB, "Game Boy", "GB", "gb"),
         NES(Systems.NES, "NES", "NES", "nes"),
         SNES(Systems.SNES, "Super Nintendo", "SNES", "sfc"),
-        MD(Systems.MD, "Mega Drive", "MD", "md");
+        MD(Systems.MD, "Mega Drive", "MD", "md"),
+        PSX(Systems.PSX, "PlayStation", "PSX", "chd");
 
         /** Preference name suffix: gba, gbc and gb as in the first builds. */
         val suffix: String get() = platform.lowercase(Locale.ROOT)

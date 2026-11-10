@@ -20,7 +20,8 @@ internal object RomFolders {
         GB(Systems.GB, "Game Boy", "GB"),
         NES(Systems.NES, "NES", "NES"),
         SNES(Systems.SNES, "Super Nintendo", "SNES"),
-        MD(Systems.MD, "Mega Drive", "MD");
+        MD(Systems.MD, "Mega Drive", "MD"),
+        PSX(Systems.PSX, "PlayStation", "PSX");
 
         companion object {
             fun of(platform: String): System? = entries.firstOrNull { it.platform == platform }

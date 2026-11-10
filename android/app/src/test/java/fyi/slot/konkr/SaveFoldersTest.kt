@@ -54,7 +54,7 @@ class SaveFoldersTest {
         }
         assertNull(SaveFolders.request(4701))
         assertNull(SaveFolders.request(4719))
-        assertNull(SaveFolders.request(4732))
+        assertNull(SaveFolders.request(4720 + 2 * SaveFolders.Console.entries.size))
     }
 
     @Test fun homeConsolesHaveTheirOwnFoldersForEveryExtension() {
@@ -92,6 +92,8 @@ class SaveFoldersTest {
         assertEquals(setOf("FCEUmm", "Nestopia"), SaveFolders.Console.NES.cores)
         assertEquals(setOf("Snes9x", "bsnes"), SaveFolders.Console.SNES.cores)
         assertEquals(setOf("Genesis Plus GX", "PicoDrive"), SaveFolders.Console.MD.cores)
+        assertEquals(setOf("PCSX-ReARMed"), SaveFolders.Console.PSX.cores)
+        assertEquals(SaveFolders.Console.PSX, SaveFolders.Console.forExtension("pbp"))
     }
 
     private val library = SaveFolders.libraryConsoles(listOf(
