@@ -326,6 +326,19 @@ fn controls(code: i32) -> u16 {
     }
 }
 
+/// A key as a PlayStation game reads it: L2 and R2 are its own buttons.
+fn disc_controls(code: i32) -> u16 {
+    match code {
+        104 => ButtonMask::L2, 105 => ButtonMask::R2,
+        other => controls(other),
+    }
+}
+
+/// A key as the running system's game reads it.
+fn game_controls(code: i32, disc: bool) -> u16 {
+    if disc { disc_controls(code) } else { controls(code) }
+}
+
 // A consumed SELECT chord must also consume that key's release.
 fn select_chord_bit(code: i32) -> u16 {
     match code {
@@ -487,7 +500,7 @@ enum ShelfOverlay {
     CartLibrary,
 }
 
-const MENU_TEXT: [&str; 135] = [
+const MENU_TEXT: [&str; 136] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -623,20 +636,21 @@ const MENU_TEXT: [&str; 135] = [
     "Dither Blending",                    // 132, Mega Drive GDAPT
     "Shelf",                              // 133, Interface: whose wallpaper
     "Cheats",                             // 134, game menu (Siham 2026-11-09)
+    "PlayStation",                        // 135
 ];
 
 /// Settings > Systems, top to bottom.
-const SYSTEM_ORDER: [Platform; 6] = [
+const SYSTEM_ORDER: [Platform; 7] = [
     Platform::Gba, Platform::Gbc, Platform::Gb,
-    Platform::Nes, Platform::Snes, Platform::Md,
+    Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx,
 ];
-const SYSTEM_TITLES: [usize; 6] = [91, 92, 93, 121, 122, 123];
+const SYSTEM_TITLES: [usize; 7] = [91, 92, 93, 121, 122, 123, 135];
 // Special racks follow the supported platforms, not hard-coded GB-era indices.
 const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 114] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 115] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -664,7 +678,8 @@ const SETTING_VALUE_NAMES: [&str; 114] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "Dot Matrix", "crt-easymode", "crt-hyllian", "SABR",
                                "Super Eagle", "xBR-lv2",
                                "Pixel Transparency", "Sunlight Shimmer",
-                               "Dot Matrix Color"];
+                               "Dot Matrix Color",
+                               "PCSX-ReARMed"];
 
 /// The value face (an index in SETTING_VALUE_NAMES) a Settings key shows,
 /// None for an action-only row. Every key a menu lists must have one: the
@@ -739,6 +754,13 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         47 => shader(scoped.shader_nes),
         48 => shader(scoped.shader_snes),
         49 => shader(scoped.shader_md),
+        70 => shader(scoped.shader_psx),
+        // The game's own in game, the system's in Settings > Systems.
+        71 => match scoped.blending_for(Platform::Psx) {
+            crate::settings::Blending::Off => 5,
+            crate::settings::Blending::Mix => 96,
+            crate::settings::Blending::Ghosting => 97,
+        },
         22 => if scoped.shader_gba.includes_gba_color() { 42 }
             else if scoped.colour_correction_gba {4}else{5},
         23 => if scoped.colour_correction_gbc {4}else{5},
@@ -818,6 +840,7 @@ fn dot_matrix_colours(view: &Settings) -> [u32; 4] {
 fn core_value(core: Core) -> usize {
     match core {
         Core::Mgba => 50, Core::Gpsp => 51, Core::Gambatte => 52,
+        Core::PcsxRearmed => 114,
         other => 70 + other.index() - Core::Fceumm.index(),
     }
 }
@@ -875,12 +898,16 @@ struct LiveGameOptions {
     eject_save: bool,
 }
 impl LiveGameOptions {
-    fn from_profile(global: &crate::settings::Settings, p: Option<EmulationProfile>) -> Self {
+    fn from_profile(global: &crate::settings::Settings, p: Option<EmulationProfile>,
+        platform: Platform) -> Self
+    {
         let ff_speed=p.and_then(|v|v.ff_speed_override).unwrap_or(global.ff_speed);
         Self {
             ff_speed,
             ff_sound:p.and_then(|v|v.ff_sound_override).unwrap_or(global.ff_sound),
-            rewind:p.and_then(|v|v.rewind_override).unwrap_or(global.rewind),
+            // A PlayStation game rewinds only when it was turned on for it.
+            rewind:p.and_then(|v|v.rewind_override)
+                .unwrap_or(global.rewind && platform != Platform::Psx),
             rewind_speed:p.and_then(|v|v.rewind_speed_override).unwrap_or(global.rewind_speed),
             turbo:p.and_then(|v|v.turbo_override).unwrap_or(global.turbo),
             rumble:p.and_then(|v|v.rumble_override).unwrap_or(global.rumble),
@@ -915,6 +942,9 @@ struct Engine {
     select_forwarded: bool,
     select_tap_frames: u8,
     chord_releases: u16,
+    /// PlayStation: SELECT + L2 / R2 held, rewinding or fast-forwarding
+    /// until released (select_chord_bit bits).
+    disc_time_held: u16,
     born: Instant,
     last: Instant,
     library_version: u64,
@@ -1622,6 +1652,7 @@ impl Engine {
             select_forwarded: false,
             select_tap_frames: 0,
             chord_releases: 0,
+            disc_time_held: 0,
             born: now,
             last: now,
             library_version,
@@ -1975,6 +2006,7 @@ impl Engine {
         self.select_forwarded = false;
         self.select_tap_frames = 0;
         self.chord_releases = 0;
+        self.disc_time_held = 0;
         self.hud.set_ff(FfState::Off);
         self.hud.release_rewind();
         AUDIO_SPEED_PERMILLE.store(1000, Ordering::Release);
@@ -2061,6 +2093,32 @@ impl Engine {
 
     // Upstream slot-input gestures: SELECT chords have priority over game input.
     // Distinct release bits avoid leaking A/B/shoulder releases into libretro.
+    /// PlayStation, slot.'s own shortcuts: SELECT + L2 rewinds and SELECT +
+    /// R2 fast-forwards while held. L2 / R2 alone are the game's (false).
+    fn disc_time_key(&mut self, code: i32, pressed: bool) -> bool {
+        if !matches!(code, 104 | 105) { return false; }
+        let bit = select_chord_bit(code);
+        let linked = self.game.as_ref().is_some_and(GameSession::linked);
+        if !pressed {
+            if self.disc_time_held & bit == 0 { return false; }
+            self.disc_time_held &= !bit;
+            if !linked {
+                if code == 104 { self.rewind_key(false) } else { self.fast_forward_key(false) }
+            }
+            return true;
+        }
+        if self.select_down_at.is_none() { return false; }
+        self.select_chorded = true;
+        self.select_tap_frames = 0;
+        self.select_forwarded = false;
+        self.buttons &= !ButtonMask::SELECT;
+        self.disc_time_held |= bit;
+        if !linked {
+            if code == 104 { self.rewind_key(true) } else { self.fast_forward_key(true) }
+        }
+        true
+    }
+
     fn handle_select_chord(&mut self, code: i32, pressed: bool) -> bool {
         let bit = select_chord_bit(code);
         if !pressed && bit != 0 && self.chord_releases & bit != 0 {
@@ -3368,6 +3426,7 @@ impl Engine {
                 }
                 // Changed hotkeys have their own dispatcher; untouched ones
                 // run through slot.'s original gestures below.
+                self.controls.hotkeys.disc = self.game.is_some() && self.current_cart_platform().disc();
                 if self.game.is_some() && !self.controls.hotkeys.is_default()
                     && self.custom_hotkey(code, pressed) { return; }
                 if code == 109 { self.select_physical = pressed; }
@@ -3765,6 +3824,8 @@ impl Engine {
                         }
                         return;
                     }
+                    let disc = self.current_cart_platform().disc();
+                    if disc && self.disc_time_key(code, pressed) { return; }
                     if self.handle_select_chord(code, pressed) { return; }
                     if pressed && self.select_down_at.is_some() && !self.select_chorded {
                         self.select_forwarded = true;
@@ -3773,7 +3834,7 @@ impl Engine {
                     // Linked frames are ordered by both players. Never allow
                     // local time travel or accelerated single-player frames.
                     if self.game.as_ref().is_some_and(GameSession::linked)
-                        && (code == 104 || code == 105) { return; }
+                        && (code == 104 || code == 105) && !disc { return; }
                     // Stick clicks (L3 / R3) set Boktai's sun, as in mGBA.
                     if code == 106 || code == 107 {
                         if pressed && self.game.as_ref().is_some_and(GameSession::solar) {
@@ -3781,11 +3842,12 @@ impl Engine {
                         }
                         return;
                     }
-                    if code == 104 {
+                    // A PlayStation game plays L2 / R2 (disc_time_key).
+                    if code == 104 && !disc {
                         self.rewind_key(pressed);
                         return;
                     }
-                    if code == 105 {
+                    if code == 105 && !disc {
                         self.fast_forward_key(pressed);
                         return;
                     }
@@ -3802,8 +3864,8 @@ impl Engine {
                         let session = self.game.as_ref();
                         let role = match session {
                             Some(game) if game.has_layouts() => game.shoulder_role(),
-                            _ if !matches!(platform, Platform::Gba | Platform::Snes | Platform::Md) =>
-                                Some(Role::ScreenSize),
+                            _ if !matches!(platform, Platform::Gba | Platform::Snes | Platform::Md
+                                | Platform::Psx) => Some(Role::ScreenSize),
                             _ => None,
                         };
                         let linked = session.is_some_and(GameSession::linked);
@@ -3828,7 +3890,7 @@ impl Engine {
                             return;
                         }
                     }
-                    let mask = controls(code);
+                    let mask = game_controls(code, disc);
                     if pressed {
                         self.buttons |= mask;
                         self.unseen_presses |= mask;
@@ -4091,6 +4153,14 @@ impl Engine {
                         108 if !self.inserted => {
                             self.shelves[self.active].release_hold();
                             self.overlay = ShelfOverlay::Menu { row: 0 };
+                            return;
+                        }
+                        109 if !self.inserted && !self.shelves[self.active].carts.is_empty()
+                            && Core::single(self.current_cart_platform()) => {
+                            // One core: no board to pick from.
+                            let core = Core::default_for(self.current_cart_platform());
+                            set_message(format!("{} plays every {} game.", core.text(),
+                                self.current_cart_platform().name()));
                             return;
                         }
                         109 if !self.inserted && !self.shelves[self.active].carts.is_empty() => {
@@ -4599,8 +4669,10 @@ impl Engine {
     /// globally persisted Settings without mutating them or another ROM.
     fn game_settings(&self) -> crate::settings::Settings {
         let mut effective = self.settings.clone();
-        if let Some(profile) = self.game_emulation {
-            profile.apply_visual_and_gameplay(&mut effective, self.current_cart_platform());
+        match self.game_emulation {
+            Some(profile) => profile.apply_visual_and_gameplay(&mut effective, self.current_cart_platform()),
+            None if self.current_cart_platform() == Platform::Psx => effective.rewind = false,
+            None => {}
         }
         effective
     }
@@ -4623,7 +4695,7 @@ impl Engine {
             .unwrap_or(self.settings.dither_blend_md)
     }
     fn live_game_options(&self) -> LiveGameOptions {
-        LiveGameOptions::from_profile(&self.settings, self.game_emulation)
+        LiveGameOptions::from_profile(&self.settings, self.game_emulation, self.current_cart_platform())
     }
     fn game_shader(&self) -> crate::settings::Shader {
         self.game_settings().shader_for(self.current_cart_platform())
@@ -4804,6 +4876,8 @@ impl Engine {
             (Platform::Nes,true)=>&[124,90],
             (Platform::Snes|Platform::Md,false)=>&[120,124],
             (Platform::Snes|Platform::Md,true)=>&[120,124,90],
+            // No overlay for the PlayStation yet.
+            (Platform::Psx,_)=>&[120,124],
         }
     }
     fn screen_keys(platform: Platform)-> &'static [usize] {
@@ -4824,6 +4898,7 @@ impl Engine {
             (Platform::Nes,true)=>&[47,44],
             (Platform::Snes,true)=>&[SCREEN_SIZE_KEY,48,45],
             (Platform::Md,true)=>&[SCREEN_SIZE_KEY,49,46],
+            (Platform::Psx,_)=>&[SCREEN_SIZE_KEY,70],
         }
     }
     // Settings > Systems opens with the system's default core, then its
@@ -4889,6 +4964,9 @@ impl Engine {
             (Platform::Nes|Platform::Snes|Platform::Md,true,_)=>&[118,124],
             (Platform::Nes|Platform::Snes|Platform::Md,false,false)=>&[118,120,124],
             (Platform::Nes|Platform::Snes|Platform::Md,false,true)=>&[118,120,124,90],
+            // One core: no Default Core row.
+            (Platform::Psx,true,_)=>&[124],
+            (Platform::Psx,false,_)=>&[120,124],
         }
     }
     fn system_keys(platform: Platform)-> &'static [usize] {
@@ -4916,6 +4994,8 @@ impl Engine {
             (Platform::Md,true,_)=>&[43,49],
             (Platform::Md,false,false)=>&[43,SCREEN_SIZE_KEY,49],
             (Platform::Md,false,true)=>&[43,SCREEN_SIZE_KEY,49,46],
+            (Platform::Psx,true,_)=>&[70],
+            (Platform::Psx,false,_)=>&[SCREEN_SIZE_KEY,70],
         }
     }
     fn core_key_platform(key:usize)->Option<Platform> {
@@ -5148,7 +5228,7 @@ impl Engine {
         self.game_emulation=Some(profile);
         if matches!(key,26|27) {self.tell_hidden_bezel();}
         let view=self.game_settings();
-        if matches!(key,0|1|3|21|47|48|49|66..=68) {
+        if matches!(key,0|1|3|21|47|48|49|66..=68|70) {
             self.apply_game_look();
         }
         // A shader change can switch to/from a preset with its own GBA Color.
@@ -6418,7 +6498,8 @@ impl Engine {
             let blank = match platform {
                 Platform::Nes => self.home_chip_blanks[0],
                 Platform::Snes => self.home_chip_blanks[1],
-                Platform::Md => self.home_chip_blanks[2],
+                // PlayStation games borrow the Mega Drive shell.
+                Platform::Md | Platform::Psx => self.home_chip_blanks[2],
                 _ => self.pak_chip_blank,
             };
             (&self.pak_chip_textures, blank)
@@ -8059,13 +8140,14 @@ mod settings_value_tests {
     #[test]
     fn each_system_page_changes_only_its_own_system() {
         // Default core, shader, colour/palette and overlay keys of each page.
-        let own: [(Platform, &[usize]); 6] = [
+        let own: [(Platform, &[usize]); 7] = [
             (Platform::Gba, &[29, 0, 22, 25]),
             (Platform::Gbc, &[30, 21, 23, 26]),
             (Platform::Gb, &[31, 1, 3, 27]),
             (Platform::Nes, &[41, 47, 44]),
             (Platform::Snes, &[42, 48, 45]),
             (Platform::Md, &[43, 49, 46]),
+            (Platform::Psx, &[70]),
         ];
         for (platform, keys) in own {
             for panel in PANELS {

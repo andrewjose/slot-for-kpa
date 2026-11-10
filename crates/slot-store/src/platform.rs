@@ -12,12 +12,14 @@ pub enum Platform {
     Snes,
     /// Mega Drive and Genesis.
     Md,
+    /// PlayStation: discs, read from the library where they are.
+    Psx,
 }
 
 impl Platform {
-    pub const ALL: [Platform; 6] = [
+    pub const ALL: [Platform; 7] = [
         Platform::Gba, Platform::Gb, Platform::Gbc,
-        Platform::Nes, Platform::Snes, Platform::Md,
+        Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx,
     ];
 
     pub fn name(self) -> &'static str {
@@ -28,6 +30,7 @@ impl Platform {
             Platform::Nes => "NES",
             Platform::Snes => "Super Nintendo",
             Platform::Md => "Mega Drive",
+            Platform::Psx => "PlayStation",
         }
     }
 
@@ -39,6 +42,7 @@ impl Platform {
             Platform::Nes => "NES",
             Platform::Snes => "SNES",
             Platform::Md => "MD",
+            Platform::Psx => "PSX",
         }
     }
 
@@ -55,6 +59,9 @@ impl Platform {
             // .bin is also used by other systems: Android only files a .bin
             // here when its header says SEGA.
             Platform::Md => &["md", "gen", "smd", "bin"],
+            // Single-file disc images only: a .cue names other files,
+            // which a library folder can't hand over by name.
+            Platform::Psx => &["chd", "pbp"],
         }
     }
 
@@ -62,6 +69,12 @@ impl Platform {
     /// consoles hand over each frame at the size their core produced.
     pub fn handheld(self) -> bool {
         matches!(self, Platform::Gba | Platform::Gb | Platform::Gbc)
+    }
+
+    /// A disc system: the game stays in the library (hundreds of MB),
+    /// the core reads it by path.
+    pub fn disc(self) -> bool {
+        self == Platform::Psx
     }
 
     /// The usual picture: for the home consoles, what the core shows most
@@ -73,6 +86,7 @@ impl Platform {
             Platform::Nes => (256, 240),
             Platform::Snes => (256, 224),
             Platform::Md => (320, 224),
+            Platform::Psx => (320, 240),
         }
     }
 

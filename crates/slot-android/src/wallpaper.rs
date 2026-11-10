@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 /// Upstream Slot v1.13 Shelf wallpaper names, in this port's shelf order:
-/// the six platform shelves (Platform::ALL), then Recents and Favorites.
+/// the platform shelves (Platform::ALL), then Recents and Favorites.
 pub const SHELF_KEYS: [&str; slot_store::Platform::ALL.len() + 2] = [
-    "GBA", "GB", "GBC", "NES", "SNES", "MD", "Recents", "Favorites",
+    "GBA", "GB", "GBC", "NES", "SNES", "MD", "PSX", "Recents", "Favorites",
 ];
 
 /// Shelf wallpapers are picked by shelf, never offered as a single wallpaper
@@ -148,13 +148,15 @@ mod tests {
         assert_eq!(for_shelf(&root, 4).as_deref(), Some("SNES.png"));
         assert_eq!(for_shelf(&root, 5).as_deref(), Some("MD.png"));
         assert_eq!(for_shelf(&root, 6), None);
-        assert_eq!(for_shelf(&root, 7).as_deref(), Some("Favorites.png"));
-        assert_eq!(for_shelf(&root, 8), None);
+        assert_eq!(for_shelf(&root, 7), None);
+        assert_eq!(for_shelf(&root, 8).as_deref(), Some("Favorites.png"));
+        assert_eq!(for_shelf(&root, 9), None);
         assert_eq!(list(&root), vec!["user.png".to_string()]);
         assert_eq!(shelf_target(1).as_deref(), Some("GB.png"));
         assert_eq!(shelf_target(3).as_deref(), Some("NES.png"));
-        assert_eq!(shelf_target(6).as_deref(), Some("Recents.png"));
-        assert_eq!(shelf_target(7).as_deref(), Some("Favorites.png"));
+        assert_eq!(shelf_target(6).as_deref(), Some("PSX.png"));
+        assert_eq!(shelf_target(7).as_deref(), Some("Recents.png"));
+        assert_eq!(shelf_target(8).as_deref(), Some("Favorites.png"));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

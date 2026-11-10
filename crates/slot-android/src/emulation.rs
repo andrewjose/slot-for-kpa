@@ -139,6 +139,9 @@ impl EmulationProfile {
         if let Some(value)=self.ff_speed_override { settings.ff_speed=value; }
         if let Some(value)=self.ff_sound_override { settings.ff_sound=value; }
         if let Some(value)=self.rewind_override { settings.rewind=value; }
+        // A PlayStation state is ~5 MB: Rewind is off unless this game
+        // turns it on.
+        else if platform==Platform::Psx { settings.rewind=false; }
         if let Some(speed)=self.rewind_speed_override { settings.rewind_speed=speed; }
         if let Some(value)=self.turbo_override { settings.turbo=value; }
         if let Some(value)=self.rumble_override { settings.rumble=value; }
@@ -166,7 +169,7 @@ impl EmulationProfile {
             (Platform::Gbc,2)=>23,
             (Platform::Gb,2)=>24,
             (_,25..=27|44..=46)=>Settings::bezel_key(platform),
-            (_,47..=49)=>Settings::home_shader_key(platform).unwrap_or(key),
+            (_,47..=49|70)=>Settings::home_shader_key(platform).unwrap_or(key),
             _=>key,
         };
         if !view.change(actual_key,right) { return false; }
@@ -175,7 +178,7 @@ impl EmulationProfile {
                 self.screen_shader=Some(view.shader_gba),
             // The paused game's rows send each system's own key (21 GBC
             // shader, 22/23/24 corrections); 1 and 2 are the old shared ones.
-            1|21|47..=49 if platform!=Platform::Gba =>
+            1|21|47..=49|70 if platform!=Platform::Gba =>
                 self.screen_shader=Some(view.shader_for(platform)),
             2|22|23|24 => self.colour_correction_override=Some(view.colour_for(platform)),
             25..=27|44..=46 => self.screen_bezel=Some(view.bezel_for(platform)),
@@ -190,7 +193,7 @@ impl EmulationProfile {
             7 => self.turbo_override=Some(view.turbo),
             8 => self.rumble_override=Some(view.rumble),
             9 => self.eject_save_override=Some(view.eject_save),
-            60..=65 => self.blending_override=Some(view.blending_for(platform)),
+            60..=65|71 => self.blending_override=Some(view.blending_for(platform)),
             66..=68 => self.lcd_effect_override=Some(view.lcd_effect_for(platform)),
             69 if platform==Platform::Md => self.dither_override=Some(view.dither_blend_md),
             _ => return false,
@@ -430,6 +433,22 @@ mod tests {
         assert_eq!(restored, profile);
         assert!(!globals.responsive_loop);
         assert!(profile.change(11, false) && !profile.responsive_loop);
+    }
+
+    #[test]
+    fn playstation_blending_and_rewind_in_game_are_the_games() {
+        let globals = Settings::first_install_defaults();
+        let mut profile = EmulationProfile::from_settings(&globals);
+        assert!(profile.change_visual_and_gameplay(&globals, Platform::Psx, 71, true));
+        assert_eq!(profile.blending_override, Some(settings::Blending::Mix));
+        assert_eq!(globals.blending_psx, settings::Blending::Off);
+        let mut view = globals.clone();
+        view.rewind = true;
+        let fresh = EmulationProfile::from_settings(&globals);
+        fresh.apply_visual_and_gameplay(&mut view, Platform::Psx);
+        assert!(!view.rewind, "Rewind is off for a PlayStation game until it turns it on");
+        profile.apply_visual_and_gameplay(&mut view, Platform::Psx);
+        assert_eq!(view.blending_psx, settings::Blending::Mix);
     }
 
     #[test]

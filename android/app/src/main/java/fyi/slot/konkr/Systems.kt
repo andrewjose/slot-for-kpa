@@ -16,15 +16,20 @@ internal object Systems {
     const val NES = "NES"
     const val SNES = "SNES"
     const val MD = "MD"
+    const val PSX = "PSX"
 
     private val NES_EXT = setOf("nes", "fc", "unf", "unif")
     private val SNES_EXT = setOf("sfc", "smc")
     // .bin is shared with other systems: only a SEGA header makes it a Mega Drive cart.
     private val MD_EXT = setOf("md", "gen", "smd", "bin")
+    /** PlayStation discs: single-file images only (a .cue names its tracks,
+     *  which a library folder can't hand over by name). */
+    val DISC_EXT = setOf("chd", "pbp")
 
-    /** Every cartridge extension, without the .zip container. */
-    val ROM_EXTENSIONS: Set<String> = setOf("gba", "gb", "gbc") + NES_EXT + SNES_EXT + MD_EXT
+    /** Every cartridge (and disc) extension, without the .zip container. */
+    val ROM_EXTENSIONS: Set<String> = setOf("gba", "gb", "gbc") + NES_EXT + SNES_EXT + MD_EXT + DISC_EXT
 
+    /** The cartridge home consoles: shells, labels and headers. */
     val HOME_PLATFORMS = setOf(NES, SNES, MD)
 
     private fun lower(ext: String) = ext.lowercase(Locale.ROOT)
@@ -37,10 +42,15 @@ internal object Systems {
         in NES_EXT -> NES
         in SNES_EXT -> SNES
         in MD_EXT -> MD
+        in DISC_EXT -> PSX
         else -> null
     }
 
-    fun isHome(ext: String) = platformFor(ext) in HOME_PLATFORMS
+    /** A home console game: a cart of HOME_PLATFORMS, or a disc. */
+    fun isHome(ext: String) = platformFor(ext) in HOME_PLATFORMS || isDisc(ext)
+
+    /** A disc image: read where it is, never copied into the cache. */
+    fun isDisc(ext: String) = lower(ext) in DISC_EXT
 
     /** libretro key -> RetroArch core name, also its saves/states folder. */
     private val FOLDERS = linkedMapOf(
@@ -53,6 +63,7 @@ internal object Systems {
         "bsnes" to "bsnes",
         "genesis_plus_gx" to "Genesis Plus GX",
         "picodrive" to "PicoDrive",
+        "pcsx_rearmed" to "PCSX-ReARMed",
     )
 
     val CORE_FOLDERS: Set<String> = FOLDERS.values.toSet()
@@ -68,6 +79,7 @@ internal object Systems {
         NES -> listOf("fceumm", "nestopia")
         SNES -> listOf("snes9x", "bsnes")
         MD -> listOf("genesis_plus_gx", "picodrive")
+        PSX -> listOf("pcsx_rearmed")
         else -> emptyList()
     }
 

@@ -277,3 +277,16 @@ fn each_home_console_board_holds_its_two_cores() {
     }
     assert_eq!(Core::parse("genesis_plus_gx"), Some(Core::GenesisPlusGx));
 }
+
+#[test]
+fn the_playstation_has_one_core() {
+    use slot_store::{Core, Platform};
+    assert!(Core::single(Platform::Psx));
+    assert_eq!(Core::default_for(Platform::Psx), Core::PcsxRearmed);
+    assert!(Core::PcsxRearmed.runs(Platform::Psx) && !Core::PcsxRearmed.runs(Platform::Md));
+    assert_eq!(Core::PcsxRearmed.text(), "PCSX-ReARMed", "RetroArch's save folder");
+    assert!(!Core::PcsxRearmed.netplay());
+    for platform in [Platform::Gba, Platform::Gb, Platform::Gbc, Platform::Nes, Platform::Snes, Platform::Md] {
+        assert!(!Core::single(platform));
+    }
+}

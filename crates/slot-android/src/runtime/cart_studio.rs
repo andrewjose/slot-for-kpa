@@ -159,7 +159,7 @@ fn outlines(platform: Platform) -> Vec<(&'static str, Outline)> {
         Platform::Snes => &[("Super Nintendo", Outline::Snes), ("Super Nintendo US", Outline::SnesUs)][..],
         Platform::Md => &[("Mega Drive", Outline::MegaDrive), ("Mega Drive Japan", Outline::MegaDriveJp),
             ("Mega Drive EA", Outline::MegaDriveEa)][..],
-        Platform::Gba => &[][..],
+        Platform::Gba | Platform::Psx => &[][..],
     });
     out
 }
@@ -243,6 +243,7 @@ pub(super) fn platform_key(platform: Platform) -> &'static str {
     match platform {
         Platform::Gba => "GBA", Platform::Gb => "GB", Platform::Gbc => "GBC",
         Platform::Nes => "NES", Platform::Snes => "SNES", Platform::Md => "MD",
+        Platform::Psx => "PSX",
     }
 }
 
@@ -255,6 +256,7 @@ pub(super) fn search_platforms(platform: Platform) -> &'static [&'static str] {
         Platform::Nes => &["NES"],
         Platform::Snes => &["SNES"],
         Platform::Md => &["MD"],
+        Platform::Psx => &["PSX"],
     }
 }
 
