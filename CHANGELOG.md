@@ -6,6 +6,24 @@ This changelog covers the public releases of slot. for Android, an Android port 
 
 - Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder offer All Systems or One System (GBA, GBC, GB, NES, Super Nintendo, Mega Drive). A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems. A system's folder receives only that system's saves or states when chosen (by core, or by the library game for mGBA and Gambatte); the All Systems folder the rest.
 
+## v2.2.1 — 10 November 2026
+
+- Simpletex on the GBA without its own GBA Color: Color Correction (mGBA/gpSP core option) works with it; players who used it get Color Correction ON once. "Grid V2 + GBA" unchanged. Simpletex GB/GBC/GBA share one GLSL function with Russ's settings and 2.2.0's grid.
+- Refresh Library: the scan bar stays as wide as its caption, top right.
+
+## v2.2.0 — 9 November 2026
+
+- Native Cart Studio in slot. replaces the web Studio (WebView activity, WASM build and staging scripts removed; third_party/slot-cart-studio keeps dat.rs): X on a cart opens the editor (Label: Current, Real Label, Logo Only, slot. label, Search game…, Picture…; Background; Colour chart of real and fun shell colours; Finish: Original, Solid, Clear, Solid glitter, Clear glitter; Shape), START → Cart Studio opens the library page per system (L1/R1 system, L2/R2 letter, SELECT full grid, Y saves every edited cart, B asks before dropping edits), live label count.
+- Labels from slot. for Android's own art set (art.slot-android.app, every system, rom hacks included) first, prefetched in parallel; the old art set and ScreenScraper only for carts it lacks. Harvester tools/home-art publishes the set to R2.
+- Cheats: libretro-database's cheat files (CC BY-SA 4.0) built in for GB, GBC, GBA, NES, SNES and Mega Drive; Game menu → Cheats, A toggles, L1/R1 change the cheat file, kept per game in RetroArch .cht format.
+- Shaders: LCD Effect (Matt Akins' Pixel Transparency and Sunlight Shimmer, with permission; Sunlight follows the accelerometer) for GB/GBC/GBA; Dot Matrix in the player's palette for GB; crt-easymode, crt-hyllian, SABR, Super Eagle and xBR-lv2 for NES/SNES/Mega Drive; Dither Blending (Sp00kyFox's GDAPT, with permission) for Mega Drive; Simpletex paper texture back.
+- Status Bar: Clock & Battery and Icons TOP/BOTTOM, Wi-Fi & Bluetooth row, Apps ALL/RUNNING/OFF, Time Format; clock left, battery right; fresh installs show clock and battery at the top, nothing until the first scan.
+- Screenshot hotkey (none by default): PNG in Pictures/Screenshots (#86).
+- Library scan progress: bar and count on the first scan, SCANNING done/total top right on Refresh Library (#102).
+- Settings → General is Interface; with the Shelf wallpaper, a Shelf row picks whose wallpaper Import and Delete act on.
+- NES/Famicom, SNES and Mega Drive slot openings sized to their carts; the GBA bar on an empty shelf. Button bars and toasts fit every screen width.
+- Fixed: Pokémon Gen III on mGBA no longer blocks Save & Eject after loading a state with an empty Flash; the save on disk is kept (#103). An older auto-state no longer resumes over a newer in-game save. A clear cart's lid no longer lifts with the board drawn on it. Mega Drive neutral shells take any colour. RetroAchievements sign-in fields no longer cut, B closes the keyboard first.
+
 ## v2.1.1 — 8 November 2026
 
 - Game Boy / Game Boy Color labels: art.slot-cfw.fyi serves WebP (its index still names .png); the art proxy asks for <art>.webp first, then <art>.png, and converts to PNG for the automatic labels and Cart Studio.
