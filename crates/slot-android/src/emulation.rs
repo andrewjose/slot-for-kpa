@@ -132,6 +132,9 @@ impl EmulationProfile {
         if let Some(value)=self.ff_speed_override { settings.ff_speed=value; }
         if let Some(value)=self.ff_sound_override { settings.ff_sound=value; }
         if let Some(value)=self.rewind_override { settings.rewind=value; }
+        // A PlayStation state is ~5 MB: Rewind is off unless this game
+        // turns it on.
+        else if platform==Platform::Psx { settings.rewind=false; }
         if let Some(speed)=self.rewind_speed_override { settings.rewind_speed=speed; }
         if let Some(value)=self.turbo_override { settings.turbo=value; }
         if let Some(value)=self.rumble_override { settings.rumble=value; }
@@ -154,7 +157,7 @@ impl EmulationProfile {
             (Platform::Gbc,2)=>23,
             (Platform::Gb,2)=>24,
             (_,25..=27|44..=46)=>Settings::bezel_key(platform),
-            (_,47..=49)=>Settings::home_shader_key(platform).unwrap_or(key),
+            (_,47..=49|70)=>Settings::home_shader_key(platform).unwrap_or(key),
             _=>key,
         };
         if !view.change(actual_key,right) { return false; }
@@ -163,7 +166,7 @@ impl EmulationProfile {
                 self.screen_shader=Some(view.shader_gba),
             // The paused game's rows send each system's own key (21 GBC
             // shader, 22/23/24 corrections); 1 and 2 are the old shared ones.
-            1|21|47..=49 if platform!=Platform::Gba =>
+            1|21|47..=49|70 if platform!=Platform::Gba =>
                 self.screen_shader=Some(view.shader_for(platform)),
             2|22|23|24 => self.colour_correction_override=Some(view.colour_for(platform)),
             25..=27|44..=46 => self.screen_bezel=Some(view.bezel_for(platform)),

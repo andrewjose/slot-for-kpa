@@ -84,6 +84,7 @@ impl Engine {
         match platform {
             Platform::Gba => "gba", Platform::Gbc => "gbc", Platform::Gb => "gb",
             Platform::Nes => "nes", Platform::Snes => "snes", Platform::Md => "md",
+            Platform::Psx => "psx",
         }
     }
 
@@ -171,7 +172,8 @@ impl Engine {
                 return true;
             }
             if code == 109 { self.slot_bit(ButtonMask::SELECT, false); return true; }
-            return matches!(code, 104..=107);
+            // A PlayStation game's L2 / R2 release reaches it below.
+            return matches!(code, 104..=107) && !(self.controls.hotkeys.disc && matches!(code, 104 | 105));
         }
         if !matches!(self.overlay, ShelfOverlay::None) { return false; }
         if button != 0 && code == button {
@@ -200,8 +202,9 @@ impl Engine {
             self.hk_forwarded = true;
             self.buttons |= ButtonMask::SELECT;
         }
-        // L2, R2, L3 and R3 are slot.'s keys, never a game's.
-        matches!(code, 104..=107)
+        // L2, R2, L3 and R3 are slot.'s keys, never a game's (but a
+        // PlayStation game plays L2 and R2).
+        matches!(code, 104..=107) && !(self.controls.hotkeys.disc && matches!(code, 104 | 105))
     }
 
     fn run_hotkey(&mut self, action: Action, pressed: bool) {
@@ -357,8 +360,10 @@ impl Engine {
                 }
                 let ShelfOverlay::LayoutPort { platform, game, .. } = self.overlay else { return };
                 // The key as slot. reads it (Settings > Controls), then its
-                // joypad bit: L2, R2, L3 and R3 are slot.'s, not the game's.
-                let slot = self.controls.slot_code(fp, code, false).map_or(0, controls_mask);
+                // joypad bit: L2, R2, L3 and R3 are slot.'s, not the game's
+                // (a PlayStation game plays L2 and R2).
+                let slot = self.controls.slot_code(fp, code, false)
+                    .map_or(0, |slot| super::game_controls(slot, platform.disc()));
                 if slot == 0 {
                     set_message("This button can't play in games.".into());
                     return;
@@ -403,14 +408,14 @@ impl Engine {
     }
 
     fn press_port2(&mut self, slot: i32) {
-        let mask = controls_mask(slot);
+        let mask = super::game_controls(slot, self.current_cart_platform().disc());
         self.buttons2 |= mask;
         self.unseen2 |= mask;
         self.held_releases2 &= !mask;
     }
 
     fn release_port2(&mut self, slot: i32) {
-        let mask = controls_mask(slot);
+        let mask = super::game_controls(slot, self.current_cart_platform().disc());
         if self.unseen2 & mask != 0 { self.held_releases2 |= mask; }
         else { self.buttons2 &= !mask; }
     }
@@ -925,6 +930,3 @@ impl Engine {
         }
     }
 }
-
-/// A slot. button's bit in a joypad mask (the same buttons as Port 1).
-fn controls_mask(slot: i32) -> u16 { super::controls(slot) }

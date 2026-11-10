@@ -176,7 +176,9 @@ fn home_board_face(cart: &Cart) -> CartFace {
     let mut face = CartFace { rgba: home::board_rgba(m, cart.battery), w, h };
     let art = m.art();
     let cores = [Core::primary_for(cart.platform), Core::alternate_for(cart.platform)];
-    for (core, (x, y, fw, fh)) in cores.into_iter().zip(art.footprints) {
+    // A single-core system prints its one core once.
+    let sockets = if Core::single(cart.platform) { 1 } else { 2 };
+    for (core, (x, y, fw, fh)) in cores.into_iter().zip(art.footprints).take(sockets) {
         over(&mut face, &home_footprint_face(core, fw as u32, fh as u32), x as u32, y as u32);
     }
     let (tx, ty, tw, th) = art.title;
@@ -212,7 +214,7 @@ fn home_chip_body(m: HomeMould, w: u32, h: u32) -> CartFace {
 
 /// The system a home console core runs, None for the handheld cores.
 fn home_platform(core: Core) -> Option<Platform> {
-    [Platform::Nes, Platform::Snes, Platform::Md].into_iter().find(|p| core.runs(*p))
+    [Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx].into_iter().find(|p| core.runs(*p))
 }
 
 /// The big chip a home console core's name is printed on, at the size of

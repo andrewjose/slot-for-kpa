@@ -32,6 +32,8 @@ internal object RomWarmCache {
                 } ?: return
             } catch (_: Exception) { return }
         } else name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        // A disc is played where it is (DiscSource): nothing to warm.
+        if (Systems.isDisc(ext)) return
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(rawUri.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
