@@ -4649,10 +4649,59 @@ impl Engine {
         } else { effect }
     }
 
+    /// The game's own size choice (or its system's), as saved.
+    fn chosen_video_mode(&self) -> VideoMode {
+        let platform = self.current_cart_platform();
+        let name = self.shelves[self.active].carts
+            .get(self.shelves[self.active].index)
+            .map_or("", |cart| cart.stem.as_str());
+        PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+            .map_or(video_mode::default_mode(platform, panel_size()),
+                |(root, _)| video_mode::video_mode_for(root, name, platform, panel_size()))
+    }
+
+    /// Whether the game's system shows an LCD Effect (Pixel Transparency
+    /// or Sunlight Shimmer). Only the Game Boy family has one.
+    fn lcd_effect_on(&self) -> bool {
+        self.settings.lcd_effect_for(self.current_cart_platform()) != crate::settings::LcdEffect::Off
+    }
+
+    /// An LCD Effect draws on whole pixels: while one is on the game plays
+    /// at Integer, whatever size was chosen. The choice itself is kept, and
+    /// comes back when the effect goes off. Each change of size shows its
+    /// banner.
+    fn keep_lcd_integer(&mut self) {
+        if self.game.is_none() { return; }
+        let Some(wanted) = self.lcd_video_mode() else { return };
+        self.video_mode = wanted;
+        self.apply_video_geometry();
+        let toast = if self.lcd_effect_on() { Toast::ScreenIntegerLcd } else { self.video_mode_toast() };
+        self.hud.toast(toast, self.born.elapsed().as_millis() as u64);
+        self.tell_hidden_bezel();
+    }
+
+    /// The size the game should switch to now that its LCD Effect is on
+    /// (Integer) or off (the chosen size), if it isn't there already.
+    fn lcd_video_mode(&self) -> Option<VideoMode> {
+        let wanted = if self.lcd_effect_on() { VideoMode::Actual } else { self.chosen_video_mode() };
+        // GBA on the KONKR has a single size (set_video_mode's rule).
+        let single = self.current_cart_platform() == Platform::Gba && !fitted_canvas();
+        (wanted != self.video_mode && !single).then_some(wanted)
+    }
+
+    /// A size change while an LCD Effect holds the game at Integer:
+    /// refused, with its banner.
+    fn lcd_holds_integer(&mut self) -> bool {
+        if !self.lcd_effect_on() { return false; }
+        self.hud.toast(Toast::ScreenIntegerLcd, self.born.elapsed().as_millis() as u64);
+        true
+    }
+
     /// The top banner naming the new screen size.
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
     fn step_screen_size(&mut self, bigger: bool) {
+        if self.lcd_holds_integer() { return; }
         let mode = if bigger { self.video_mode.bigger() } else { self.video_mode.smaller() };
         if mode == self.video_mode { return; }
         self.set_video_mode(mode);
@@ -4911,8 +4960,21 @@ impl Engine {
             self.system_video_modes=Platform::ALL.map(|platform| video_mode::system_mode(&storage,platform,panel_size()));
         }
     }
+    /// On the Systems page, an LCD Effect just turned on for a system whose
+    /// Screen Size isn't Integer: its games will play at Integer.
+    fn tell_lcd_integer(&self) {
+        let ShelfOverlay::ScreenSystemSettings { platform, .. } = self.overlay else { return };
+        if self.settings.lcd_effect_for(platform) == crate::settings::LcdEffect::Off { return; }
+        if self.system_video_modes[platform as usize] == VideoMode::Actual { return; }
+        set_message("The LCD Effect plays these games at Integer size.".into());
+    }
+
     /// Settings > Systems' Screen Size: Integer, Original Ratio, Stretch.
     fn cycle_system_video_mode(&mut self, platform: Platform, right: bool) {
+        if self.settings.lcd_effect_for(platform) != crate::settings::LcdEffect::Off {
+            set_message("Screen Size stays Integer while the LCD Effect is on.".into());
+            return;
+        }
         let at=platform as usize;
         let now=self.system_video_modes[at];
         let mode=if right { now.bigger() } else { now.smaller() };
@@ -5083,6 +5145,7 @@ impl Engine {
             return;
         }
         if key == SCREEN_SIZE_KEY {
+            if self.lcd_holds_integer() { return; }
             let mode = if right { self.video_mode.bigger() } else { self.video_mode.smaller() };
             if mode != self.video_mode {
                 self.set_video_mode(mode);
@@ -5679,7 +5742,11 @@ impl Engine {
         // Clock formatting can change independently of Android's next
         // status event. Force one re-render of the existing clock value.
         if key == 28 { self.last_system_status_rev = 0; }
-        if (66..=68).contains(&key) && self.game.is_some() { self.apply_game_look(); }
+        if (66..=68).contains(&key) {
+            if self.game.is_some() { self.apply_game_look(); }
+            self.keep_lcd_integer();
+            self.tell_lcd_integer();
+        }
         if key == 5 {
             FF_AUDIO_ENABLED.store(self.settings.ff_sound, Ordering::Release);
             AUDIO.lock().unwrap_or_else(|e| e.into_inner()).clear();
@@ -5714,6 +5781,10 @@ impl Engine {
             self.game_settings()
         } else { self.settings.clone() };
         let video = match self.overlay {
+            // An LCD Effect holds the system's games at Integer.
+            ShelfOverlay::ScreenSystemSettings { platform, .. }
+                if self.settings.lcd_effect_for(platform) != crate::settings::LcdEffect::Off =>
+                VideoMode::Actual,
             ShelfOverlay::ScreenSystemSettings { platform, .. } =>
                 self.system_video_modes[platform as usize],
             _ => self.video_mode,
@@ -6886,14 +6957,10 @@ impl Engine {
                     self.apply_game_look();
                     // The exact Slot upstream geometry: GB/GBC 160x144
                     // is centred within the 240x160 libretro canvas.
-                    let name = self.shelves[self.active].carts
-                        .get(self.shelves[self.active].index)
-                        .map_or("", |cart| cart.stem.as_str());
-                    let platform = self.current_cart_platform();
-                    self.video_mode = PATHS.lock().unwrap_or_else(|e| e.into_inner())
-                        .as_ref().map_or(video_mode::default_mode(platform, panel_size()),
-                            |(root, _)| video_mode::video_mode_for(root, name, platform, panel_size()));
+                    // An LCD Effect holds the game at Integer.
+                    self.video_mode = self.chosen_video_mode();
                     self.apply_video_geometry();
+                    self.keep_lcd_integer();
                     self.screen_power = 0.0;
                     self.exiting_screen = false;
                     self.gpu.set_screen_power(0.0);

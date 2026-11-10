@@ -537,3 +537,47 @@ fn console_connector_and_role_follow_the_inserted_cart_and_actual_link_state() {
         }
     }
 }
+
+#[test]
+fn an_lcd_effect_holds_games_at_integer() {
+    use crate::settings::LcdEffect;
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    let cart = |platform, stem: &str| Cart {
+        platform, stem: stem.into(), title: stem.into(),
+        code: String::new(), rom: PathBuf::new(), label: None, shell: None, battery: false,
+    };
+    engine.active = 0;
+    engine.shelves[0].carts = vec![cart(Platform::Gbc, "Color")];
+    engine.shelves[0].index = 0;
+    engine.video_mode = VideoMode::Aspect;
+    let now = |engine: &Engine| engine.born.elapsed().as_millis() as u64;
+
+    // Off: the game keeps its own size.
+    assert!(!engine.lcd_effect_on());
+    let chosen = engine.chosen_video_mode();
+    assert_eq!(engine.lcd_video_mode(), (chosen != VideoMode::Aspect).then_some(chosen));
+
+    // Pixel Transparency (or Sunlight Shimmer): Integer, other sizes refused.
+    for effect in [LcdEffect::Transparency, LcdEffect::Sunlight] {
+        engine.settings.lcd_effect_gbc = effect;
+        engine.video_mode = VideoMode::Aspect;
+        assert_eq!(engine.lcd_video_mode(), Some(VideoMode::Actual));
+        engine.step_screen_size(true);
+        assert_eq!(engine.video_mode, VideoMode::Aspect, "no size change while it is on");
+        assert_eq!(engine.hud.said(now(&engine)), Some(Toast::ScreenIntegerLcd));
+    }
+    engine.video_mode = VideoMode::Actual;
+    assert_eq!(engine.lcd_video_mode(), None, "already Integer: no second banner");
+
+    // Settings > Systems: the size shows Integer and stays there.
+    let at = Platform::Gbc as usize;
+    engine.system_video_modes[at] = VideoMode::Stretch;
+    engine.overlay = ShelfOverlay::ScreenSystemSettings { platform: Platform::Gbc, row: 0 };
+    assert_eq!(engine.setting_value(SCREEN_SIZE_KEY), Some(SCREEN_SIZE_VALUE));
+    engine.cycle_system_video_mode(Platform::Gbc, false);
+    assert_eq!(engine.system_video_modes[at], VideoMode::Stretch, "the choice is kept");
+    engine.settings.lcd_effect_gbc = LcdEffect::Off;
+    assert_eq!(engine.setting_value(SCREEN_SIZE_KEY), Some(SCREEN_SIZE_VALUE + 2),
+        "off again: the system's own size");
+}
