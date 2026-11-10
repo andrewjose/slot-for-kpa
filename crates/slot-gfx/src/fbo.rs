@@ -264,6 +264,11 @@ impl Compositor {
         self.game.set_light(x, y);
     }
 
+    /// The LCD Effect's parameters (Pixel Transparency, Sunlight Shimmer).
+    pub fn set_lcd_params(&mut self, params: crate::LcdParams) {
+        self.game.set_lcd_params(params);
+    }
+
     pub fn set_dot_palette(&mut self, colours: [u32; 4]) {
         self.game.set_dot_palette(colours);
     }

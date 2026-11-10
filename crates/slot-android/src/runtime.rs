@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use crate::game::GameSession;
 use crate::settings::Settings;
 use crate::emulation::EmulationProfile;
+use crate::lcd_params::{LcdField, LcdPage, LcdSettings};
 use std::time::Duration;
 use crate::video_mode::{self, VideoMode};
 use crate::core_selection;
@@ -485,6 +486,18 @@ enum ShelfOverlay {
     /// X on a cart: its label and shell (runtime/cart_studio.rs).
     CartStudio,
     CartLibrary,
+    /// A on an LCD Effect row: its parameter pages (`page` None), or one
+    /// page's rows.
+    LcdEffect { from: LcdFrom, page: Option<LcdPage>, row: usize },
+}
+
+/// The page the LCD Effect menu returns to on B.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum LcdFrom {
+    /// Settings > Systems, from a system's LCD Effect row.
+    Systems { platform: Platform, row: usize },
+    /// A paused game's Screen settings: the game shows behind the menu.
+    Pause { row: usize },
 }
 
 const MENU_TEXT: [&str; 135] = [
@@ -624,6 +637,29 @@ const MENU_TEXT: [&str; 135] = [
     "Shelf",                              // 133, Interface: whose wallpaper
     "Cheats",                             // 134, game menu (Siham 2026-11-09)
 ];
+
+/// LCD Effect menu text, loaded after MENU_TEXT: its heading, Reset to
+/// Defaults, then each page's name and title, then every parameter's label.
+const LCD_TEXT: usize = MENU_TEXT.len();
+const LCD_HEADING: usize = LCD_TEXT;
+const LCD_RESET: usize = LCD_TEXT + 1;
+fn lcd_texts() -> impl Iterator<Item = &'static str> {
+    ["LCD EFFECT", "Reset to Defaults"].into_iter()
+        .chain(LcdPage::ALL.map(LcdPage::name))
+        .chain(LcdPage::ALL.map(LcdPage::title))
+        .chain(LcdField::ALL.map(LcdField::label))
+}
+fn lcd_page_name(page: LcdPage) -> usize { LCD_TEXT + 2 + page.index() }
+fn lcd_page_title(page: LcdPage) -> usize { LCD_TEXT + 2 + LcdPage::ALL.len() + page.index() }
+fn lcd_field_label(field: LcdField) -> usize {
+    LCD_TEXT + 2 + 2 * LcdPage::ALL.len() + field.index()
+}
+/// The page list: one row per page, then Reset to Defaults.
+fn lcd_list() -> Vec<usize> {
+    LcdPage::ALL.into_iter().map(lcd_page_name).chain([LCD_RESET]).collect()
+}
+/// Settings keys of the Game Boys' LCD Effect rows.
+fn lcd_key(key: usize) -> bool { (66..=68).contains(&key) }
 
 /// Settings > Systems, top to bottom.
 const SYSTEM_ORDER: [Platform; 6] = [
@@ -1085,6 +1121,14 @@ struct Engine {
     settings_hints: [(slot_gfx::TexId, u32); 2],
     /// The in-game Screen page's L1 R1 Size, right of the cart.
     screen_size_hint: (slot_gfx::TexId, u32),
+    // LCD Effect parameters: the shown page's values (redrawn as they
+    // change), the legends offering A Adjust and in-game Y Preview, the
+    // preview itself, and edits not yet written to Settings.json.
+    lcd_value_faces: Vec<(slot_gfx::TexId, u32, u32)>,
+    lcd_row_hints: [(slot_gfx::TexId, u32); 3],
+    lcd_page_hints: [(slot_gfx::TexId, u32); 3],
+    lcd_preview: bool,
+    lcd_dirty_since: Option<Instant>,
     about_texture: Option<slot_gfx::TexId>,
     update_status: u8,
     update_auto: bool,
@@ -1411,7 +1455,7 @@ impl Engine {
             arrow_left: sprite(art.arrow_left),
             arrow_right: sprite(art.arrow_right),
         };
-        let menu_textures = MENU_TEXT.iter().map(|label| {
+        let menu_textures = MENU_TEXT.iter().copied().chain(lcd_texts()).map(|label| {
             let face = quick_value_face(label, true);
             let tex = gpu.create_face(&face);
             (tex, face.w, face.h)
@@ -1530,6 +1574,14 @@ impl Engine {
         ].map(|face| {
             let tex = gpu.create_face(&face);
             (tex, face.w)
+        });
+        let lcd_value_faces = (0..6).map(|_| {
+            let face = quick_value_face("0.00", true);
+            (gpu.create_face(&face), face.w, face.h)
+        }).collect();
+        let [lcd_row_hints, lcd_page_hints] = [("A", "Adjust"), ("Y", "Preview")].map(|middle| {
+            [hint_face("B", "Back"), hint_face(middle.0, middle.1), arrows_hint_face("Change")]
+                .map(|face| (gpu.create_face(&face), face.w))
         });
         let screen_size_hint = {
             let face = hint_face("L1+R1", "Size");
@@ -1743,6 +1795,11 @@ impl Engine {
             setting_carets,
             settings_hints,
             screen_size_hint,
+            lcd_value_faces,
+            lcd_row_hints,
+            lcd_page_hints,
+            lcd_preview: false,
+            lcd_dirty_since: None,
             about_texture,
             update_status: 0,
             update_auto: true,
@@ -2017,6 +2074,7 @@ impl Engine {
                     | ShelfOverlay::LayoutPorts { game: true, .. }
                     | ShelfOverlay::LayoutPort { game: true, .. }
                     | ShelfOverlay::Cheats { .. }
+                    | ShelfOverlay::LcdEffect { .. }
                     | ShelfOverlay::States => ShelfOverlay::None,
                     _=>ShelfOverlay::GameMenu {row:0},
                 };
@@ -3372,7 +3430,8 @@ impl Engine {
                     && self.custom_hotkey(code, pressed) { return; }
                 if code == 109 { self.select_physical = pressed; }
                 if self.select_slot_combo(code, pressed) { return; }
-                if matches!(code, 19 | 20) {
+                // Held Left / Right repeat on an LCD Effect page.
+                if matches!(code, 19 | 20) || (matches!(code, 21 | 22) && self.lcd_page_open()) {
                     if !pressed {
                         if self.menu_held.is_some_and(|(held,_,_)|held==code) {
                             self.menu_held=None;
@@ -3650,6 +3709,10 @@ impl Engine {
                     }
                     return;
                 }
+                if matches!(self.overlay, ShelfOverlay::LcdEffect { .. }) {
+                    self.lcd_menu_key(code, pressed);
+                    return;
+                }
                 if self.game.is_some() && matches!(self.overlay, ShelfOverlay::PauseSettings { .. }
                     | ShelfOverlay::PauseScreenSettings { .. }
                     | ShelfOverlay::PauseGameplaySettings { .. }
@@ -3706,6 +3769,8 @@ impl Engine {
                                 19 | 20 => self.overlay = ShelfOverlay::PauseScreenSettings {
                                     row: move_menu_row(row,code,self.pause_screen_page_rows().len()),
                                 },
+                                96 if self.pause_screen_page_key(row).is_some_and(lcd_key) =>
+                                    self.open_lcd(LcdFrom::Pause { row }),
                                 21 | 22 => if let Some(key)=self.pause_screen_page_key(row) {
                                     self.change_game_screen_or_gameplay(key,code==22);
                                     // Shader keys can switch the core's own GBA Color.
@@ -3979,6 +4044,8 @@ impl Engine {
                                 },
                                 96 if row+1==Self::system_page_rows(platform).len() =>
                                     self.overlay=Self::layout_entry(platform, false),
+                                96 if Self::system_page_keys(platform).get(row).copied().is_some_and(lcd_key) =>
+                                    self.open_lcd(LcdFrom::Systems { platform, row }),
                                 21 | 22 | 96 => if let Some(key)=Self::system_page_keys(platform).get(row).copied()
                                     .filter(|key| *key!=usize::MAX) {
                                     self.change_setting(key,code!=21);
@@ -4070,7 +4137,8 @@ impl Engine {
                             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
                             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
                             ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } |
-                            ShelfOverlay::States | ShelfOverlay::Cheats { .. } | ShelfOverlay::None => {}
+                            ShelfOverlay::States | ShelfOverlay::Cheats { .. } |
+                            ShelfOverlay::LcdEffect { .. } | ShelfOverlay::None => {}
                         }
                     }
                     return;
@@ -4648,6 +4716,7 @@ impl Engine {
         self.gpu.set_screen_effect(effect);
         let lcd = self.game_lcd_effect(self.current_cart_platform());
         self.gpu.set_lcd_effect(lcd.gpu());
+        self.gpu.set_lcd_params(self.settings.lcd_params.shader());
         let sunlight = lcd == crate::settings::LcdEffect::Sunlight && self.game.is_some();
         if sunlight != self.tilt_on {
             self.tilt_on = sunlight;
@@ -4670,10 +4739,153 @@ impl Engine {
         } else { effect }
     }
 
+    /// The game's own size choice (or its system's), as saved.
+    fn chosen_video_mode(&self) -> VideoMode {
+        let platform = self.current_cart_platform();
+        let name = self.shelves[self.active].carts
+            .get(self.shelves[self.active].index)
+            .map_or("", |cart| cart.stem.as_str());
+        PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+            .map_or(video_mode::default_mode(platform, panel_size()),
+                |(root, _)| video_mode::video_mode_for(root, name, platform, panel_size()))
+    }
+
+    /// Per frame: LCD Effect edits reach Settings.json once they settle (a
+    /// held arrow would otherwise write the file every 50 ms).
+    fn tick_lcd_params(&mut self) {
+        if let Some(since) = self.lcd_dirty_since {
+            if !self.lcd_page_open() || since.elapsed() >= Duration::from_millis(700) {
+                self.lcd_dirty_since = None;
+                self.persist_settings();
+            }
+        }
+    }
+    fn lcd_page_open(&self) -> bool {
+        matches!(self.overlay, ShelfOverlay::LcdEffect { page: Some(_), .. })
+    }
+    /// New parameters for the GPU, and on the paused game behind the menu.
+    fn push_lcd_params(&mut self) {
+        self.gpu.set_lcd_params(self.settings.lcd_params.shader());
+        if self.game.is_some() { self.redraw_paused_game(); }
+    }
+
+    fn open_lcd(&mut self, from: LcdFrom) {
+        self.lcd_preview = false;
+        self.overlay = ShelfOverlay::LcdEffect { from, page: None, row: 0 };
+    }
+
+    /// Keys on the LCD Effect menus, on the shelf and in a paused game. The
+    /// parameters are shared by the Game Boy systems.
+    fn lcd_menu_key(&mut self, code: i32, pressed: bool) {
+        let ShelfOverlay::LcdEffect { from, page, row } = self.overlay else { return };
+        let in_game = matches!(from, LcdFrom::Pause { .. }) && self.game.is_some();
+        if code == 100 {
+            // Hold Y: only the chosen row stays, over the paused game.
+            self.lcd_preview = pressed && in_game && page.is_some();
+            return;
+        }
+        if !pressed { return; }
+        let at = |page, row| ShelfOverlay::LcdEffect { from, page, row };
+        match (page, code) {
+            (_, 108) if !in_game => {
+                self.lcd_preview = false;
+                self.overlay = ShelfOverlay::None;
+            }
+            (None, 19 | 20) => {
+                self.overlay = at(None, move_menu_row(row, code, LcdPage::ALL.len() + 1));
+            }
+            (None, 96) => match LcdPage::ALL.get(row) {
+                Some(&page) => {
+                    self.overlay = at(Some(page), 0);
+                    self.refresh_lcd_values();
+                }
+                None => {
+                    self.settings.lcd_params = LcdSettings::default();
+                    self.lcd_dirty_since = None;
+                    self.persist_settings();
+                    self.push_lcd_params();
+                    set_message("The LCD Effect is back to its defaults.".into());
+                }
+            },
+            (None, 97) => {
+                self.overlay = match from {
+                    LcdFrom::Systems { platform, row } =>
+                        ShelfOverlay::ScreenSystemSettings { platform, row },
+                    LcdFrom::Pause { row } => ShelfOverlay::PauseScreenSettings { row },
+                };
+            }
+            (Some(page), 19 | 20) => {
+                self.overlay = at(Some(page), move_menu_row(row, code, page.fields().len()));
+            }
+            (Some(page), 21 | 22) => {
+                let Some(&field) = page.fields().get(row) else { return };
+                if field.step(&mut self.settings.lcd_params, code == 22) {
+                    self.lcd_dirty_since = Some(Instant::now());
+                    self.refresh_lcd_values();
+                    self.push_lcd_params();
+                }
+            }
+            (Some(page), 97) => {
+                self.lcd_preview = false;
+                self.overlay = at(None, page.index());
+            }
+            _ => {}
+        }
+    }
+
+    /// Redraw the shown page's values into their faces.
+    fn refresh_lcd_values(&mut self) {
+        let ShelfOverlay::LcdEffect { page: Some(page), .. } = self.overlay else { return };
+        for (slot, field) in self.lcd_value_faces.iter_mut().zip(page.fields()) {
+            let face = quick_value_face(&field.text(&self.settings.lcd_params), true);
+            self.gpu.update_face(slot.0, &face);
+            *slot = (slot.0, face.w, face.h);
+        }
+    }
+
+    /// Whether the game shows an LCD Effect (Pixel Transparency or Sunlight
+    /// Shimmer): its own when changed in game, else its system's. Only the
+    /// Game Boy family has one.
+    fn lcd_effect_on(&self) -> bool {
+        self.game_lcd_effect(self.current_cart_platform()) != crate::settings::LcdEffect::Off
+    }
+
+    /// An LCD Effect draws on whole pixels: while one is on the game plays
+    /// at Integer, whatever size was chosen. The choice itself is kept, and
+    /// comes back when the effect goes off. Each change of size shows its
+    /// banner.
+    fn keep_lcd_integer(&mut self) {
+        if self.game.is_none() { return; }
+        let Some(wanted) = self.lcd_video_mode() else { return };
+        self.video_mode = wanted;
+        self.apply_video_geometry();
+        let toast = if self.lcd_effect_on() { Toast::ScreenIntegerLcd } else { self.video_mode_toast() };
+        self.hud.toast(toast, self.born.elapsed().as_millis() as u64);
+        self.tell_hidden_bezel();
+    }
+
+    /// The size the game should switch to now that its LCD Effect is on
+    /// (Integer) or off (the chosen size), if it isn't there already.
+    fn lcd_video_mode(&self) -> Option<VideoMode> {
+        let wanted = if self.lcd_effect_on() { VideoMode::Actual } else { self.chosen_video_mode() };
+        // GBA on the KONKR has a single size (set_video_mode's rule).
+        let single = self.current_cart_platform() == Platform::Gba && !fitted_canvas();
+        (wanted != self.video_mode && !single).then_some(wanted)
+    }
+
+    /// A size change while an LCD Effect holds the game at Integer:
+    /// refused, with its banner.
+    fn lcd_holds_integer(&mut self) -> bool {
+        if !self.lcd_effect_on() { return false; }
+        self.hud.toast(Toast::ScreenIntegerLcd, self.born.elapsed().as_millis() as u64);
+        true
+    }
+
     /// The top banner naming the new screen size.
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
     fn step_screen_size(&mut self, bigger: bool) {
+        if self.lcd_holds_integer() { return; }
         let mode = if bigger { self.video_mode.bigger() } else { self.video_mode.smaller() };
         if mode == self.video_mode { return; }
         self.set_video_mode(mode);
@@ -4932,8 +5144,21 @@ impl Engine {
             self.system_video_modes=Platform::ALL.map(|platform| video_mode::system_mode(&storage,platform,panel_size()));
         }
     }
+    /// On the Systems page, an LCD Effect just turned on for a system whose
+    /// Screen Size isn't Integer: its games will play at Integer.
+    fn tell_lcd_integer(&self) {
+        let ShelfOverlay::ScreenSystemSettings { platform, .. } = self.overlay else { return };
+        if self.settings.lcd_effect_for(platform) == crate::settings::LcdEffect::Off { return; }
+        if self.system_video_modes[platform as usize] == VideoMode::Actual { return; }
+        set_message("The LCD Effect plays these games at Integer size.".into());
+    }
+
     /// Settings > Systems' Screen Size: Integer, Original Ratio, Stretch.
     fn cycle_system_video_mode(&mut self, platform: Platform, right: bool) {
+        if self.settings.lcd_effect_for(platform) != crate::settings::LcdEffect::Off {
+            set_message("Screen Size stays Integer while the LCD Effect is on.".into());
+            return;
+        }
         let at=platform as usize;
         let now=self.system_video_modes[at];
         let mode=if right { now.bigger() } else { now.smaller() };
@@ -5098,6 +5323,7 @@ impl Engine {
 
     fn change_game_screen_or_gameplay(&mut self, key: usize, right: bool) {
         if key == SCREEN_SIZE_KEY {
+            if self.lcd_holds_integer() { return; }
             let mode = if right { self.video_mode.bigger() } else { self.video_mode.smaller() };
             if mode != self.video_mode {
                 self.set_video_mode(mode);
@@ -5151,6 +5377,8 @@ impl Engine {
         if matches!(key,0|1|3|21|47|48|49|66..=68) {
             self.apply_game_look();
         }
+        // This game's LCD Effect holds it at Integer, or gives its size back.
+        if (66..=68).contains(&key) { self.keep_lcd_integer(); }
         // A shader change can switch to/from a preset with its own GBA Color.
         // Recompute core colour here as well as when the correction toggle moves.
         if matches!(key,0|1|21|2|22|23|24) {
@@ -5694,7 +5922,11 @@ impl Engine {
         // Clock formatting can change independently of Android's next
         // status event. Force one re-render of the existing clock value.
         if key == 28 { self.last_system_status_rev = 0; }
-        if (66..=68).contains(&key) && self.game.is_some() { self.apply_game_look(); }
+        if (66..=68).contains(&key) {
+            if self.game.is_some() { self.apply_game_look(); }
+            self.keep_lcd_integer();
+            self.tell_lcd_integer();
+        }
         if key == 5 {
             FF_AUDIO_ENABLED.store(self.settings.ff_sound, Ordering::Release);
             AUDIO.lock().unwrap_or_else(|e| e.into_inner()).clear();
@@ -5729,6 +5961,10 @@ impl Engine {
             self.game_settings()
         } else { self.settings.clone() };
         let video = match self.overlay {
+            // An LCD Effect holds the system's games at Integer.
+            ShelfOverlay::ScreenSystemSettings { platform, .. }
+                if self.settings.lcd_effect_for(platform) != crate::settings::LcdEffect::Off =>
+                VideoMode::Actual,
             ShelfOverlay::ScreenSystemSettings { platform, .. } =>
                 self.system_video_modes[platform as usize],
             _ => self.video_mode,
@@ -5793,13 +6029,18 @@ impl Engine {
         // and a 12 px gap.
         let room = out_w() as f32 - 34.0 - 22.0 - caret - 12.0 - 37.0;
         items.iter().enumerate().map(|(i, &label)| {
-            let lw = self.menu_textures.get(label).map_or(0, |t| t.1) as f32;
             let vw = keys.get(i).and_then(|&k| self.value_face(k)).map_or(0, |f| f.1) as f32;
-            if vw == 0.0 || (lw + vw) * 0.79 <= room { return (0.79, 0.79); }
-            let label_scale = ((room - vw * 0.79) / lw.max(1.0)).clamp(0.55, 0.79);
-            let value_scale = ((room - lw * label_scale) / vw).clamp(0.5, 0.79);
-            (label_scale, value_scale)
+            self.fit_row(label, vw, room)
         }).collect()
+    }
+
+    /// One row's label and value scales for `room` px (see fit_scales).
+    fn fit_row(&self, label: usize, vw: f32, room: f32) -> (f32, f32) {
+        let lw = self.menu_textures.get(label).map_or(0, |t| t.1) as f32;
+        if vw == 0.0 || (lw + vw) * 0.79 <= room { return (0.79, 0.79); }
+        let label_scale = ((room - vw * 0.79) / lw.max(1.0)).clamp(0.55, 0.79);
+        let value_scale = ((room - lw * label_scale) / vw).clamp(0.5, 0.79);
+        (label_scale, value_scale)
     }
 
     /// A settings page: its rows, then their values, fitted together.
@@ -5848,20 +6089,104 @@ impl Engine {
             }
         }
         // The original Back / Change physical keycap legend; on the in-game
-        // Screen page, either side of the seated cart.
+        // Screen page, either side of the seated cart. On an LCD Effect
+        // row, A opens its parameters.
+        let lcd_row = keys.get(row).copied().is_some_and(lcd_key);
         if self.screen_panel() {
             // B Back | L1 R1 Size; where the screen already has the
             // system's shape there is no size: arrows Change.
-            let right = if self.screen_page_sizes() { self.screen_size_hint }
+            let right = if lcd_row { self.lcd_row_hints[1] }
+                else if self.screen_page_sizes() { self.screen_size_hint }
                 else { self.settings_hints[1] };
             self.draw_flanking_hints(&[self.settings_hints[0], right], out);
             return;
         }
+        let hints = if lcd_row { &self.lcd_row_hints[..] } else { &self.settings_hints[..] };
+        self.draw_lcd_legend(hints, out);
+    }
+
+    /// One LCD Effect page: labels, values, and the legend. In a paused
+    /// game, holding Y leaves only the chosen row at the foot of the screen
+    /// so each change shows on the game above it.
+    fn draw_lcd_page(&self, from: LcdFrom, page: LcdPage, row: usize, out: &mut Vec<Draw>) {
+        let fields = page.fields();
+        let row = row.min(fields.len() - 1);
+        let in_game = matches!(from, LcdFrom::Pause { .. }) && self.game.is_some();
+        let hints = if in_game { &self.lcd_page_hints[..] } else { &self.settings_hints[..] };
+        if in_game && self.lcd_preview {
+            self.draw_lcd_strip(fields[row], row, hints, out);
+            return;
+        }
+        let labels: Vec<usize> = fields.iter().map(|field| lcd_field_label(*field)).collect();
+        let room = out_w() as f32 - 34.0 - 22.0 - (self.setting_carets[0].1 as f32 + 8.0)
+            - 12.0 - 37.0;
+        let scales: Vec<(f32, f32)> = labels.iter().zip(&self.lcd_value_faces)
+            .map(|(&label, face)| self.fit_row(label, face.1 as f32, room)).collect();
+        self.draw_menu_rows(lcd_page_title(page), &labels, row, &scales, out);
+        // Six rows at most: an LCD Effect page never scrolls.
+        let top = self.menu_rows_top(fields.len());
+        for (index, face) in self.lcd_value_faces.iter().take(fields.len()).enumerate() {
+            let y = top + index as f32 * QUICK_PITCH + 8.0;
+            self.draw_lcd_value(*face, y, index == row, scales[index].1, out);
+        }
+        self.draw_lcd_legend(hints, out);
+    }
+
+    /// The Y preview: the chosen row alone at the foot of the screen.
+    fn draw_lcd_strip(&self, field: LcdField, row: usize,
+                      hints: &[(slot_gfx::TexId, u32)], out: &mut Vec<Draw>) {
+        const ROW_TOP: f32 = 364.0;
+        out.push(Draw::Rect {
+            x: 0.0, y: ROW_TOP - 4.0, w: out_w() as f32, h: OUT_H as f32 - ROW_TOP + 4.0,
+            colour: opening(),
+        });
+        out.push(Draw::Rect {
+            x: 0.0, y: ROW_TOP + 4.0, w: out_w() as f32, h: QUICK_PITCH - 8.0,
+            colour: edge(),
+        });
+        // The label stops short of the value and its carets on any width.
+        let value = self.lcd_value_faces[row];
+        let value_left = out_w() as f32 - 34.0 - value.1 as f32 * 0.79 - 22.0
+            - self.setting_carets[0].1 as f32 - 8.0;
+        self.text_fit(lcd_field_label(field), 37.0, ROW_TOP + 8.0,
+            (value_left - 37.0 - 16.0).max(120.0), 1.0, out);
+        self.draw_lcd_value(value, ROW_TOP + 8.0, true, 0.79, out);
+        self.draw_lcd_legend(hints, out);
+    }
+
+    /// A value at the right of its row, with carets when chosen, exactly as
+    /// draw_values places them.
+    fn draw_lcd_value(&self, (tex, width, height): (slot_gfx::TexId, u32, u32),
+                      y: f32, chosen: bool, scale: f32, out: &mut Vec<Draw>) {
+        let w = width as f32 * scale;
+        let right = out_w() as f32 - 34.0;
+        let x = right - w - if chosen { 22.0 } else { 0.0 };
+        // A smaller value stays centred on its row.
+        out.push(Draw::Tex {
+            x, y: y + height as f32 * (0.79 - scale) / 2.0, w, h: height as f32 * scale,
+            tex, alpha: if chosen { 1.0 } else { 0.62 },
+        });
+        if chosen {
+            let (left, lw, lh) = self.setting_carets[0];
+            let (right_tex, rw, rh) = self.setting_carets[1];
+            out.push(Draw::Tex {
+                x: x - lw as f32 - 8.0, y, w: lw as f32,
+                h: lh as f32, tex: left, alpha: 1.0,
+            });
+            out.push(Draw::Tex {
+                x: right - rw as f32, y, w: rw as f32,
+                h: rh as f32, tex: right_tex, alpha: 1.0,
+            });
+        }
+    }
+
+    /// The menu's keycap legend along the foot of the screen.
+    fn draw_lcd_legend(&self, hints: &[(slot_gfx::TexId, u32)], out: &mut Vec<Draw>) {
         out.push(Draw::Rect {
             x: 0.0, y: 420.0, w: out_w() as f32, h: 60.0,
             colour: opening(),
         });
-        for (tex, w, x) in centred_hints(&self.settings_hints, LEGEND_GAP) {
+        for (tex, w, x) in centred_hints(hints, LEGEND_GAP) {
             out.push(Draw::Tex {
                 x, y: self.legend_y(), w: w as f32, h: HINT_H as f32,
                 tex, alpha: 1.0,
@@ -6257,6 +6582,12 @@ impl Engine {
                 let keys=Self::system_page_keys(platform);
                 self.draw_settings_menu(Self::screen_title(platform),&rows,row,&keys,out);
             }
+            ShelfOverlay::LcdEffect { page: None, row, .. } => {
+                self.draw_original_style_menu(LCD_HEADING, &lcd_list(), row, out);
+            }
+            ShelfOverlay::LcdEffect { from, page: Some(page), row } => {
+                self.draw_lcd_page(from, page, row, out);
+            }
             ShelfOverlay::GameplaySettings { row } => {
                 self.draw_settings_menu(33, &GAMEPLAY_ROWS, row, &GAMEPLAY_KEYS, out);
             }
@@ -6591,6 +6922,7 @@ impl Engine {
         let phase_native_started = Instant::now();
         LINK_ACTIVE.store(self.game.as_ref().is_some_and(|game| game.linked()), Ordering::Release);
         self.tick_menu_repeat();
+        self.tick_lcd_params();
         self.refresh_system_status();
         self.poll_shelf_wallpapers();
         // Poll the already-running achievement evaluator without blocking GL.
@@ -6788,6 +7120,10 @@ impl Engine {
             ShelfOverlay::ScreenSystemSettings { platform,row } =>
                 (16u8,row,Self::system_page_rows(platform).len()),
             ShelfOverlay::GameplaySettings { row } => (6u8, row, GAMEPLAY_KEYS.len()),
+            ShelfOverlay::LcdEffect { page: None, row, .. } =>
+                (40u8, row, LcdPage::ALL.len() + 1),
+            ShelfOverlay::LcdEffect { page: Some(page), row, .. } =>
+                (41u8 + page.index() as u8, row, page.fields().len()),
             ShelfOverlay::CartStudio => (30u8, 0, 0),
             ShelfOverlay::CartLibrary => (31u8, 0, 0),
             _ => (0, 0, 0),
@@ -6901,14 +7237,10 @@ impl Engine {
                     self.apply_game_look();
                     // The exact Slot upstream geometry: GB/GBC 160x144
                     // is centred within the 240x160 libretro canvas.
-                    let name = self.shelves[self.active].carts
-                        .get(self.shelves[self.active].index)
-                        .map_or("", |cart| cart.stem.as_str());
-                    let platform = self.current_cart_platform();
-                    self.video_mode = PATHS.lock().unwrap_or_else(|e| e.into_inner())
-                        .as_ref().map_or(video_mode::default_mode(platform, panel_size()),
-                            |(root, _)| video_mode::video_mode_for(root, name, platform, panel_size()));
+                    // An LCD Effect holds the game at Integer.
+                    self.video_mode = self.chosen_video_mode();
                     self.apply_video_geometry();
+                    self.keep_lcd_integer();
                     self.screen_power = 0.0;
                     self.exiting_screen = false;
                     self.gpu.set_screen_power(0.0);
@@ -6940,7 +7272,7 @@ impl Engine {
             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
             ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } |
             ShelfOverlay::LayoutPorts { game: true, .. } | ShelfOverlay::LayoutPort { game: true, .. } |
-            ShelfOverlay::Cheats { .. }) {
+            ShelfOverlay::Cheats { .. } | ShelfOverlay::LcdEffect { .. }) {
             // Coordinate the pause with the remote game. Without this
             // the other Cable peer times out and gpSP RFU can drift.
             if let Some(game) = self.game.as_mut() { game.set_link_paused(true); }
