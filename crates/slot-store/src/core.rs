@@ -18,13 +18,14 @@ pub enum Core {
     Bsnes,
     GenesisPlusGx,
     Picodrive,
+    PcsxRearmed,
 }
 
 impl Core {
-    pub const ALL: [Core; 9] = [
+    pub const ALL: [Core; 10] = [
         Core::Mgba, Core::Gpsp, Core::Gambatte,
         Core::Fceumm, Core::Nestopia, Core::Snes9x, Core::Bsnes,
-        Core::GenesisPlusGx, Core::Picodrive,
+        Core::GenesisPlusGx, Core::Picodrive, Core::PcsxRearmed,
     ];
 
     /// libretro's own core name: lib{as_str}_libretro.so, and the key
@@ -40,6 +41,7 @@ impl Core {
             Core::Bsnes => "bsnes",
             Core::GenesisPlusGx => "genesis_plus_gx",
             Core::Picodrive => "picodrive",
+            Core::PcsxRearmed => "pcsx_rearmed",
         }
     }
 
@@ -67,6 +69,7 @@ impl Core {
             Core::Bsnes => "bsnes",
             Core::GenesisPlusGx => "Genesis Plus GX",
             Core::Picodrive => "PicoDrive",
+            Core::PcsxRearmed => "PCSX-ReARMed",
         }
     }
 
@@ -86,11 +89,13 @@ impl Core {
             Platform::Nes => Core::Fceumm,
             Platform::Snes => Core::Snes9x,
             Platform::Md => Core::GenesisPlusGx,
+            Platform::Psx => Core::PcsxRearmed,
         }
     }
 
     /// The second socket on the board: gpSP for GBA, Gambatte for GB/GBC,
-    /// Nestopia for NES, bsnes for SNES, PicoDrive for Mega Drive.
+    /// Nestopia for NES, bsnes for SNES, PicoDrive for Mega Drive. The
+    /// PlayStation has a single core: both are PCSX ReARMed.
     pub fn alternate_for(platform: Platform) -> Core {
         match platform {
             Platform::Gba => Core::Gpsp,
@@ -98,19 +103,25 @@ impl Core {
             Platform::Nes => Core::Nestopia,
             Platform::Snes => Core::Bsnes,
             Platform::Md => Core::Picodrive,
+            Platform::Psx => Core::PcsxRearmed,
         }
     }
 
     /// Which of the board's two sockets this core sits in.
     pub fn socket(self) -> usize {
         match self {
-            Core::Mgba | Core::Fceumm | Core::Snes9x | Core::GenesisPlusGx => 0,
+            Core::Mgba | Core::Fceumm | Core::Snes9x | Core::GenesisPlusGx | Core::PcsxRearmed => 0,
             Core::Gpsp | Core::Gambatte | Core::Nestopia | Core::Bsnes | Core::Picodrive => 1,
         }
     }
 
     pub fn default_for(platform: Platform) -> Core {
         Core::primary_for(platform)
+    }
+
+    /// A system with one core: no board to pick from.
+    pub fn single(platform: Platform) -> bool {
+        Core::primary_for(platform) == Core::alternate_for(platform)
     }
 }
 
@@ -144,6 +155,7 @@ fn default_key(platform: Platform) -> &'static str {
         Platform::Nes => "nes",
         Platform::Snes => "snes",
         Platform::Md => "md",
+        Platform::Psx => "psx",
     }
 }
 

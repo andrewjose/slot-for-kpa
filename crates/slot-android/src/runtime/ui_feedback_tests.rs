@@ -129,19 +129,19 @@ fn paused_game_controls_inherit_globals_until_overridden() {
     let mut settings=crate::settings::Settings::default();
     settings.ff_speed=6;
     settings.turbo=true; // KONKR original X/Y Buttons
-    let defaults=LiveGameOptions::from_profile(&settings,None);
+    let defaults=LiveGameOptions::from_profile(&settings,None,Platform::Gba);
     assert_eq!(defaults.ff_speed,6);
     assert!(defaults.turbo);
     let mut profile=EmulationProfile::from_settings(&settings);
     assert!(profile.change_visual_and_gameplay(&settings,Platform::Gba,7,true));
     assert!(profile.change_visual_and_gameplay(&settings,Platform::Gba,4,true));
-    let scoped=LiveGameOptions::from_profile(&settings,Some(profile));
+    let scoped=LiveGameOptions::from_profile(&settings,Some(profile),Platform::Gba);
     assert_ne!(scoped.ff_speed,defaults.ff_speed);
     assert_eq!(scoped.turbo,!defaults.turbo);
     assert_eq!(settings.ff_speed,6);
     assert!(settings.turbo,"global X/Y Buttons must not be modified");
     // A reset immediately restores the current Settings globals.
-    assert_eq!(LiveGameOptions::from_profile(&settings,None).ff_speed,6);
+    assert_eq!(LiveGameOptions::from_profile(&settings,None,Platform::Gba).ff_speed,6);
 }
 
 #[test]
@@ -536,4 +536,40 @@ fn console_connector_and_role_follow_the_inserted_cart_and_actual_link_state() {
             }
         }
     }
+}
+
+#[test]
+fn playstation_pages_and_its_rewind_default() {
+    // One core: no Default Core row; Screen Size, Shader, Frame Blending, Controls.
+    assert_eq!(Engine::system_page_rows(Platform::Psx), vec![120, 124, 126, 125]);
+    assert_eq!(Engine::system_page_keys(Platform::Psx), vec![SCREEN_SIZE_KEY, 70, 71, usize::MAX]);
+    assert_eq!(Engine::screen_keys(Platform::Psx), &[SCREEN_SIZE_KEY, 70]);
+    assert_eq!(MENU_TEXT[135], "PlayStation");
+    assert_eq!(SETTING_VALUE_NAMES[core_value(Core::PcsxRearmed)], "PCSX-ReARMed");
+    // L2 / R2 are a PlayStation game's buttons, nobody else's.
+    assert_eq!(game_controls(104, true), ButtonMask::L2);
+    assert_eq!(game_controls(105, true), ButtonMask::R2);
+    assert_eq!(game_controls(104, false), 0);
+    assert_eq!(game_controls(96, true), ButtonMask::A);
+
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    engine.active = 0;
+    engine.shelves[0].carts = vec![Cart {
+        platform: Platform::Psx, stem: "Vagrant Story (USA)".into(), title: "Vagrant Story".into(),
+        code: String::new(), rom: PathBuf::new(), label: None, shell: None, battery: false,
+    }];
+    engine.shelves[0].index = 0;
+    engine.settings.rewind = true;
+    assert!(!engine.game_settings().rewind, "a PlayStation game starts without Rewind");
+    assert!(!engine.live_game_options().rewind);
+    let mut profile = EmulationProfile::from_settings(&engine.settings);
+    assert!(profile.change_visual_and_gameplay(&engine.settings, Platform::Psx, 6, true));
+    engine.game_emulation = Some(profile);
+    assert!(engine.game_settings().rewind, "turned on for this game");
+    assert!(engine.live_game_options().rewind);
+    // The shader row edits the PlayStation's own shader.
+    assert!(engine.settings.change(70, true));
+    assert_eq!(engine.settings.shader_psx, crate::settings::Shader::ZfastCrt);
+    assert_eq!(engine.settings.shader_md, crate::settings::Shader::ZfastCrt, "untouched default");
 }

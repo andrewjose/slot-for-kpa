@@ -95,6 +95,29 @@ pub struct SystemTiming {
     pub sample_rate: f64,
 }
 
+/// retro_get_system_info: only `need_fullpath` is read.
+#[repr(C)]
+pub struct SystemInfo {
+    pub library_name: *const c_char,
+    pub library_version: *const c_char,
+    pub valid_extensions: *const c_char,
+    /// The core opens the game itself, by path (disc images).
+    pub need_fullpath: bool,
+    pub block_extract: bool,
+}
+
+impl Default for SystemInfo {
+    fn default() -> Self {
+        SystemInfo {
+            library_name: std::ptr::null(),
+            library_version: std::ptr::null(),
+            valid_extensions: std::ptr::null(),
+            need_fullpath: false,
+            block_extract: false,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Default)]
 pub struct SystemAvInfo {
@@ -166,6 +189,7 @@ pub struct Api {
     pub deinit: unsafe extern "C" fn(),
     pub api_version: unsafe extern "C" fn() -> c_uint,
     pub get_system_av_info: unsafe extern "C" fn(*mut SystemAvInfo),
+    pub get_system_info: unsafe extern "C" fn(*mut SystemInfo),
     pub set_environment: unsafe extern "C" fn(EnvironmentFn),
     pub set_video_refresh: unsafe extern "C" fn(VideoRefreshFn),
     pub set_audio_sample: unsafe extern "C" fn(AudioSampleFn),
@@ -200,6 +224,7 @@ impl Api {
             deinit: get!("retro_deinit"),
             api_version: get!("retro_api_version"),
             get_system_av_info: get!("retro_get_system_av_info"),
+            get_system_info: get!("retro_get_system_info"),
             set_environment: get!("retro_set_environment"),
             set_video_refresh: get!("retro_set_video_refresh"),
             set_audio_sample: get!("retro_set_audio_sample"),

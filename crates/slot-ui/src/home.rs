@@ -34,6 +34,9 @@ impl HomeMould {
             Platform::Nes => Some(HomeMould::Nes),
             Platform::Snes => Some(HomeMould::Snes),
             Platform::Md => Some(HomeMould::MegaDrive),
+            // No disc art yet: PlayStation games borrow the black Mega
+            // Drive shell.
+            Platform::Psx => Some(HomeMould::MegaDrive),
             Platform::Gba | Platform::Gb | Platform::Gbc => None,
         }
     }
@@ -135,7 +138,8 @@ pub fn home_shell(platform: Platform, stem: &str, region: &str, maker: &str) -> 
         Platform::Nes => HomeSystem::Nes,
         Platform::Snes => HomeSystem::Snes,
         Platform::Md => HomeSystem::Md,
-        Platform::Gba | Platform::Gb | Platform::Gbc => return None,
+        // One plain shell for every disc: no regional or publisher shells.
+        Platform::Gba | Platform::Gb | Platform::Gbc | Platform::Psx => return None,
     };
     let (mould, colour, glitter) = home_pick(system, stem, region, maker);
     let finish = if glitter { ShellFinish::Glitter } else { ShellFinish::Solid };

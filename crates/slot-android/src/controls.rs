@@ -450,6 +450,9 @@ pub mod bit {
     pub const X: u16 = 1 << 9;
     pub const L: u16 = 1 << 10;
     pub const R: u16 = 1 << 11;
+    /// The PlayStation's L2 / R2, the only system that plays them.
+    pub const L2: u16 = 1 << 12;
+    pub const R2: u16 = 1 << 13;
 }
 
 /// The name of one of slot.'s buttons, by its bit; "None" for no button.
@@ -458,6 +461,7 @@ pub fn slot_button_name(slot: u16) -> &'static str {
         bit::UP => "Up", bit::DOWN => "Down", bit::LEFT => "Left", bit::RIGHT => "Right",
         bit::A => "A", bit::B => "B", bit::X => "X", bit::Y => "Y",
         bit::L => "L1", bit::R => "R1", bit::SELECT => "SELECT", bit::START => "START",
+        bit::L2 => "L2", bit::R2 => "R2",
         _ => "None",
     }
 }
@@ -485,20 +489,28 @@ const MD: [ConsoleButton; 12] = [DPAD[0], DPAD[1], DPAD[2], DPAD[3],
     cb("X", bit::L), cb("Y", bit::X), cb("Z", bit::R),
     cb("Mode", bit::SELECT), cb("START", bit::START)];
 
+/// PCSX ReARMed's digital pad, as RetroArch maps it: Cross from B, Circle
+/// from A, Square from Y, Triangle from X.
+const PSX: [ConsoleButton; 14] = [DPAD[0], DPAD[1], DPAD[2], DPAD[3],
+    cb("Cross", bit::B), cb("Circle", bit::A), cb("Square", bit::Y), cb("Triangle", bit::X),
+    cb("L1", bit::L), cb("R1", bit::R), cb("L2", bit::L2), cb("R2", bit::R2),
+    cb("SELECT", bit::SELECT), cb("START", bit::START)];
+
 /// Systems, by the names slot. files their controls under.
-pub const SYSTEMS: [&str; 6] = ["gba", "gbc", "gb", "nes", "snes", "md"];
+pub const SYSTEMS: [&str; 7] = ["gba", "gbc", "gb", "nes", "snes", "md", "psx"];
 
 pub fn console_buttons(system: &str) -> &'static [ConsoleButton] {
     match system {
         "gba" => &GBA,
         "snes" => &SNES,
         "md" => &MD,
+        "psx" => &PSX,
         _ => &TWO_BUTTONS,
     }
 }
 
-/// Only NES, SNES and Mega Drive take a second player.
-pub fn takes_port2(system: &str) -> bool { matches!(system, "nes" | "snes" | "md") }
+/// Only the home consoles take a second player.
+pub fn takes_port2(system: &str) -> bool { matches!(system, "nes" | "snes" | "md" | "psx") }
 
 /// What X and Y do on a console without them (Game Boys, NES).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -850,10 +862,14 @@ pub struct Hotkeys {
     /// The handheld has L3 and R3 (not saved: the runtime tells).
     #[serde(skip, default = "yes")]
     pub sticks: bool,
+    /// A PlayStation game is playing: L2 and R2 are its buttons, Fast
+    /// Forward and Rewind the Hotkey Button + R2 / L2 (not saved).
+    #[serde(skip)]
+    pub disc: bool,
 }
 
 impl Default for Hotkeys {
-    fn default() -> Self { Self { button: 109, binds: BTreeMap::new(), sticks: true } }
+    fn default() -> Self { Self { button: 109, binds: BTreeMap::new(), sticks: true, disc: false } }
 }
 
 /// A key's name in a hotkey: slot.'s own button names.
@@ -885,6 +901,8 @@ impl Hotkeys {
         let with = |key| Combo { modifier: true, key };
         let alone = |key| Combo { modifier: false, key };
         match action {
+            Action::FastForward if self.disc => vec![with(105)],
+            Action::Rewind if self.disc => vec![with(104)],
             Action::FastForward => vec![alone(105)],
             Action::Rewind => vec![alone(104)],
             Action::SunDown if self.sun_alone() => vec![alone(106), with(104)],
@@ -1311,7 +1329,7 @@ mod tests {
 
     /// game.rs's pad_buttons before Controls, for the comparison above.
     fn old_pad(system: &str, slot: u16, turbo: bool, frame: u32) -> u16 {
-        if matches!(system, "snes" | "md") { return slot; }
+        if matches!(system, "snes" | "md" | "psx") { return slot; }
         let mut mapped = slot & !(bit::X | bit::Y);
         if turbo {
             if (frame / 3) % 2 == 0 {
@@ -1325,6 +1343,28 @@ mod tests {
         // L1/R1 resized the screen and never reached Game Boy or NES cores.
         if system != "gba" { mapped &= !(bit::L | bit::R); }
         mapped
+    }
+
+    #[test]
+    fn a_playstation_pad_plays_l2_and_r2() {
+        let layout = Controls::default().resolve("psx", None, 0, XyRole::TurboAB);
+        assert_eq!(layout.apply(bit::L2 | bit::R2 | bit::Y, 0), bit::L2 | bit::R2 | bit::Y);
+        assert!(takes_port2("psx") && !spare_xy("psx") && !spare_shoulders("psx"));
+        let names: Vec<&str> = console_buttons("psx").iter().map(|b| b.name).collect();
+        assert!(names.contains(&"Cross") && names.contains(&"L2") && names.contains(&"R2"));
+        assert_eq!(slot_button_name(bit::R2), "R2");
+    }
+
+    #[test]
+    fn on_a_playstation_game_fast_forward_and_rewind_take_the_hotkey_button() {
+        let mut hk = Hotkeys::default();
+        assert_eq!(hk.action_for(false, 105, false), Some(Action::FastForward));
+        hk.disc = true;
+        assert_eq!(hk.action_for(false, 105, false), None, "R2 is the game's");
+        assert_eq!(hk.action_for(false, 104, false), None, "L2 is the game's");
+        assert_eq!(hk.action_for(true, 105, false), Some(Action::FastForward));
+        assert_eq!(hk.action_for(true, 104, false), Some(Action::Rewind));
+        assert_eq!(hk.label(Action::FastForward), "SELECT + R2 (hold)");
     }
 
     #[test]

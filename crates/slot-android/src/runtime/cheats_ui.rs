@@ -29,6 +29,11 @@ impl Engine {
             return;
         }
         let platform = self.current_cart_platform();
+        // A disc is hundreds of MB, and there's no PlayStation pack yet.
+        if platform.disc() {
+            set_message("No cheats for PlayStation games yet.".into());
+            return;
+        }
         let started = Instant::now();
         let checksums = std::fs::read(game.rom_path())
             .map(|rom| crate::cheats::rom_checksums(platform, &rom)).unwrap_or_default();

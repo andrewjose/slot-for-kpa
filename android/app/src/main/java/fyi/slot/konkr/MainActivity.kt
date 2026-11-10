@@ -1616,9 +1616,12 @@ class MainActivity : Activity() {
                     .digest(rawUri.toByteArray(Charsets.UTF_8))
                     .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
                 val dir = File(cacheDir, "rom-cache").apply { mkdirs() }
-                val target = File(dir, "$digest.$ext")
+                // A disc (hundreds of MB) is read where it is, through an
+                // open file descriptor; a cartridge is copied into the cache.
+                val disc = Systems.isDisc(ext)
+                val target = if (disc) DiscSource.link(this, uri, digest, ext) else File(dir, "$digest.$ext")
                 // Always open via Android SAF; no assumptions about physical filesystem paths.
-                if (!target.isFile || target.length() < 0x150) {
+                if (!disc && (!target.isFile || target.length() < 0x150)) {
                     val temp = File(dir, "$digest.tmp")
                     try {
                         contentResolver.openInputStream(uri)?.use { input ->

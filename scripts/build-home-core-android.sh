@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Reproducible arm64 builds of the NES, SNES and Mega Drive libretro cores,
-# each from a pinned upstream commit with the core's own Android recipe
-# (jni/Android.mk). No BIOS or ROMs. Usage: build-home-core-android.sh CORE
-#   fceumm nestopia snes9x bsnes genesis_plus_gx picodrive
+# Reproducible arm64 builds of the NES, SNES, Mega Drive and PlayStation
+# libretro cores, each from a pinned upstream commit with the core's own
+# Android recipe (jni/Android.mk). No BIOS or ROMs.
+# Usage: build-home-core-android.sh CORE
+#   fceumm nestopia snes9x bsnes genesis_plus_gx picodrive pcsx_rearmed
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NDK="${ANDROID_NDK_HOME:-${ANDROID_SDK_ROOT:?Set ANDROID_NDK_HOME or ANDROID_SDK_ROOT}/ndk/27.2.12479018}"
@@ -18,6 +19,8 @@ case "$CORE" in
   bsnes)           REPO=bsnes;            PIN=63ee22f7af8f5d1ada295c2c98fd7bf261fa62a7; JNI=bsnes/target-libretro/jni;  LICENCE=LICENSE.txt ;;
   genesis_plus_gx) REPO=Genesis-Plus-GX;  PIN=f27655b592ef43f317272d79883bcaa10d3ac8ad; JNI=libretro/jni;                LICENCE=LICENSE.txt ;;
   picodrive)       REPO=picodrive;        PIN=1890c2932234c9d30f4cd3851d02228baae8f09e; JNI=jni;                         LICENCE=COPYING; SUBMODULES=1 ;;
+  # ARM64 dynarec + NEON GPU; its deps are vendored, not submodules.
+  pcsx_rearmed)    REPO=pcsx_rearmed;     PIN=7b0e8f8fadfbce3d170d195b9d9eecaabfa08c8e; JNI=jni;                         LICENCE=COPYING ;;
   *) echo "Unknown home console core: $CORE" >&2; exit 1 ;;
 esac
 OUT="$ROOT/.build/$CORE"
