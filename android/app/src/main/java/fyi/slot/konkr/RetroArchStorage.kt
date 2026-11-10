@@ -1141,7 +1141,10 @@ internal object RetroArchStorage {
         if (states) Regex(".+\\.state(\\.auto|[1-9])?(\\.png)?").matches(name)
         else name.endsWith(".srm") || name.endsWith(".rtc")
 
-    fun planTransfer(context: Context, root: Uri, states: Boolean): TransferPlan {
+    /** `accept(core folder, file name)` leaves a file out of the transfer
+     *  (a folder of one system's own takes only that system's files). */
+    fun planTransfer(context: Context, root: Uri, states: Boolean,
+                     accept: (String, String) -> Boolean = { _, _ -> true }): TransferPlan {
         val base = File(context.filesDir, if (states) "States" else "Saves")
         val missing = mutableListOf<TransferItem>()
         val different = mutableListOf<TransferItem>()
@@ -1151,6 +1154,7 @@ internal object RetroArchStorage {
             for (file in files.sortedBy { it.name }) {
                 val name = file.name
                 if (name.startsWith(".") || !transferKind(name, states)) continue
+                if (!accept(core, name)) continue
                 val item = TransferItem(core, file, states && !name.endsWith(".png"))
                 val limit = if (item.state) MAX_STATE else MAX_SAVE
                 if (file.length() !in 1L..limit.toLong()) continue
