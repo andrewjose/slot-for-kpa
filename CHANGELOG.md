@@ -2,6 +2,10 @@
 
 This changelog covers the public releases of slot. for Android, an Android port born on the KONKR Pocket Advance (formerly slot. for KONKR Pocket Advance). Earlier development experiments are preserved in Git history.
 
+## Unreleased
+
+- ROM folders per system: Library → Choose ROM Folder offers All Systems or One System. A system's own folder replaces the All Systems one for that system's games (a GBC folder shelves its GB carts as GBC; a GB folder its non-GBC-only carts as GB), and the library is every folder's games together, a file seen through two folders once. With the All Systems folder alone, the scan and its cache are exactly as before.
+
 ## v2.2.1 — 10 November 2026
 
 - Simpletex on the GBA without its own GBA Color: Color Correction (mGBA/gpSP core option) works with it; players who used it get Color Correction ON once. "Grid V2 + GBA" unchanged. Simpletex GB/GBC/GBA share one GLSL function with Russ's settings and 2.2.0's grid.
