@@ -169,7 +169,7 @@ impl EmulationProfile {
             (Platform::Gbc,2)=>23,
             (Platform::Gb,2)=>24,
             (_,25..=27|44..=46)=>Settings::bezel_key(platform),
-            (_,47..=49|70)=>Settings::home_shader_key(platform).unwrap_or(key),
+            (_,47..=49|70|73)=>Settings::home_shader_key(platform).unwrap_or(key),
             _=>key,
         };
         if !view.change(actual_key,right) { return false; }
@@ -178,7 +178,7 @@ impl EmulationProfile {
                 self.screen_shader=Some(view.shader_gba),
             // The paused game's rows send each system's own key (21 GBC
             // shader, 22/23/24 corrections); 1 and 2 are the old shared ones.
-            1|21|47..=49|70 if platform!=Platform::Gba =>
+            1|21|47..=49|70|73 if platform!=Platform::Gba =>
                 self.screen_shader=Some(view.shader_for(platform)),
             2|22|23|24 => self.colour_correction_override=Some(view.colour_for(platform)),
             25..=27|44..=46 => self.screen_bezel=Some(view.bezel_for(platform)),
@@ -193,7 +193,7 @@ impl EmulationProfile {
             7 => self.turbo_override=Some(view.turbo),
             8 => self.rumble_override=Some(view.rumble),
             9 => self.eject_save_override=Some(view.eject_save),
-            60..=65|71 => self.blending_override=Some(view.blending_for(platform)),
+            60..=65|71|74 => self.blending_override=Some(view.blending_for(platform)),
             66..=68 => self.lcd_effect_override=Some(view.lcd_effect_for(platform)),
             69 if platform==Platform::Md => self.dither_override=Some(view.dither_blend_md),
             _ => return false,

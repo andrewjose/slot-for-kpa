@@ -16,24 +16,21 @@ internal object SaveFolders {
     /** One code per system from here for saves, then one each for states. */
     private const val SYSTEM_REQUEST = 4720
 
-    /** `ext`: one extension of the system's carts. */
-    enum class Console(val platform: String, val label: String, val short: String,
-                       private val ext: String) {
-        GBA(Systems.GBA, "Game Boy Advance", "GBA", "gba"),
-        GBC(Systems.GBC, "Game Boy Color", "GBC", "gbc"),
-        GB(Systems.GB, "Game Boy", "GB", "gb"),
-        NES(Systems.NES, "NES", "NES", "nes"),
-        SNES(Systems.SNES, "Super Nintendo", "SNES", "sfc"),
-        MD(Systems.MD, "Mega Drive", "MD", "md"),
-        PSX(Systems.PSX, "PlayStation", "PSX", "chd");
+    enum class Console(val platform: String, val label: String, val short: String) {
+        GBA(Systems.GBA, "Game Boy Advance", "GBA"),
+        GBC(Systems.GBC, "Game Boy Color", "GBC"),
+        GB(Systems.GB, "Game Boy", "GB"),
+        NES(Systems.NES, "NES", "NES"),
+        SNES(Systems.SNES, "Super Nintendo", "SNES"),
+        MD(Systems.MD, "Mega Drive", "MD"),
+        PSX(Systems.PSX, "PlayStation", "PSX"),
+        TGCD(Systems.TGCD, "TurboGrafx-CD", "TGCD");
 
         /** Preference name suffix: gba, gbc and gb as in the first builds. */
         val suffix: String get() = platform.lowercase(Locale.ROOT)
 
         /** The RetroArch core folders of the cores that run this system. */
-        val cores: Set<String> get() = Systems.CORE_FOLDERS.filter { folder ->
-            Systems.coreFolder(Systems.keyForFolder(folder), ext) == folder
-        }.toSet()
+        val cores: Set<String> get() = Systems.coreFoldersFor(platform)
 
         companion object {
             /** The system of a ROM extension, as Systems files it. */
@@ -72,8 +69,12 @@ internal object SaveFolders {
 
     /** The folder for a game with this ROM extension: its system's own
      *  folder when one is chosen, otherwise the all-systems folder. */
-    fun resolve(read: (String) -> String?, base: String, ext: String): String? {
-        val own = Console.forExtension(ext)?.let { read(key(base, it)) }
+    fun resolve(read: (String) -> String?, base: String, ext: String, core: String? = null): String? {
+        // A core of one system names it (a CHD is a PlayStation's or a
+        // TurboGrafx-CD's); a shared core (mGBA) leaves it to the extension.
+        val console = core?.let { folder -> Console.entries.filter { folder in it.cores }.singleOrNull() }
+            ?: Console.forExtension(ext)
+        val own = console?.let { read(key(base, it)) }
         return own ?: read(base)
     }
 
@@ -99,8 +100,11 @@ internal object SaveFolders {
         val out = HashMap<String, MutableSet<Console>>()
         for (game in games) {
             val ext = game.romExt.ifEmpty { game.filename.substringAfterLast('.', "") }
-            val console = Console.forExtension(ext)
-                ?: Console.entries.firstOrNull { it.platform == game.platform } ?: continue
+            // A disc is filed by its core, which its shelf names (a CHD may
+            // be either disc system's).
+            val byShelf = Console.entries.firstOrNull { it.platform == game.platform }
+            val console = (if (Systems.isDisc(ext)) byShelf else null)
+                ?: Console.forExtension(ext) ?: byShelf ?: continue
             val stem = game.filename.substringBeforeLast('.', game.filename).trim().take(200)
             if (stem.isNotEmpty()) out.getOrPut(stem) { HashSet() }.add(console)
         }

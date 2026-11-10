@@ -17,6 +17,7 @@ internal object Systems {
     const val SNES = "SNES"
     const val MD = "MD"
     const val PSX = "PSX"
+    const val TGCD = "TGCD"
 
     private val NES_EXT = setOf("nes", "fc", "unf", "unif")
     private val SNES_EXT = setOf("sfc", "smc")
@@ -25,6 +26,20 @@ internal object Systems {
     /** PlayStation discs: single-file images only (a .cue names its tracks,
      *  which a library folder can't hand over by name). */
     val DISC_EXT = setOf("chd", "pbp")
+    /** TurboGrafx-CD discs: a CHD, in a TurboGrafx-CD folder (a CHD alone
+     *  doesn't say which system it is for; elsewhere it is a PlayStation's). */
+    val TGCD_EXT = setOf("chd")
+    /** ES-DE's names for its folder, and the usual others. */
+    private val TGCD_FOLDERS = setOf("tg-cd", "tgcd", "pcenginecd", "pcengine-cd", "pce-cd",
+        "pcecd", "turbografx-cd", "turbografxcd", "turbografx cd", "pc engine cd")
+
+    /** A folder whose discs are TurboGrafx-CD games. */
+    fun isTgcdFolder(name: String) = lower(name) in TGCD_FOLDERS
+
+    /** The shelf for a file found in a folder (`tgcdFolder`: in a
+     *  TurboGrafx-CD folder, at any depth). */
+    fun platformFor(ext: String, tgcdFolder: Boolean): String? =
+        if (tgcdFolder && lower(ext) in TGCD_EXT) TGCD else platformFor(ext)
 
     /** Every cartridge (and disc) extension, without the .zip container. */
     val ROM_EXTENSIONS: Set<String> = setOf("gba", "gb", "gbc") + NES_EXT + SNES_EXT + MD_EXT + DISC_EXT
@@ -64,6 +79,7 @@ internal object Systems {
         "genesis_plus_gx" to "Genesis Plus GX",
         "picodrive" to "PicoDrive",
         "pcsx_rearmed" to "PCSX-ReARMed",
+        "mednafen_pce_fast" to "Beetle PCE Fast",
     )
 
     val CORE_FOLDERS: Set<String> = FOLDERS.values.toSet()
@@ -80,13 +96,20 @@ internal object Systems {
         SNES -> listOf("snes9x", "bsnes")
         MD -> listOf("genesis_plus_gx", "picodrive")
         PSX -> listOf("pcsx_rearmed")
+        TGCD -> listOf("mednafen_pce_fast")
         else -> emptyList()
     }
+
+    /** The RetroArch core folders of a shelf's cores. */
+    fun coreFoldersFor(platform: String): Set<String> =
+        coresFor(platform).map { FOLDERS.getValue(it) }.toSet()
 
     /** The folder of the core that runs this cart: the one the native side
      *  picked when it runs this extension's system, else the system default. */
     fun coreFolder(key: String, ext: String): String {
-        val cores = coresFor(platformFor(ext))
+        // A CHD may be a TurboGrafx-CD's: the native side's pick says.
+        val cores = coresFor(platformFor(ext)) +
+            (if (lower(ext) in TGCD_EXT) coresFor(TGCD) else emptyList())
         require(cores.isNotEmpty()) { "Unsupported ROM type" }
         val chosen = key.lowercase(Locale.ROOT).takeIf { it in cores } ?: cores.first()
         return FOLDERS.getValue(chosen)

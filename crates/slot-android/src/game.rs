@@ -727,6 +727,9 @@ impl GameSession {
                 // by slot., and the frame stays within NATIVE_MAX.
                 core.set_option("pcsx_rearmed_neon_enhancement_enable", "disabled");
             }
+            // System Card 3 (syscard3.pce) from the BIOS folder: the core's
+            // default, and what most CD games need.
+            Core::MednafenPceFast => {}
         }
         // rcheevos shares ONE evaluator, protected against cross-console
         // memory reads. GB=4 / GBA=5 / GBC=6 use their own libretro maps.
@@ -735,7 +738,7 @@ impl GameSession {
             Platform::Gb => Some(4), Platform::Gba => Some(5), Platform::Gbc => Some(6),
             Platform::Nes => Some(7), Platform::Snes => Some(3), Platform::Md => Some(1),
             // rcheevos hashes a disc by reading its tracks: not wired up.
-            Platform::Psx => None,
+            Platform::Psx | Platform::Tgcd => None,
         };
         // Second-instance Run-Ahead boots its copy from these, solo only.
         let runahead_secondary_spec = linked_boot.is_none().then(|| crate::runahead_secondary::Spec {

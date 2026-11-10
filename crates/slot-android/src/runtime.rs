@@ -500,7 +500,7 @@ enum ShelfOverlay {
     CartLibrary,
 }
 
-const MENU_TEXT: [&str; 136] = [
+const MENU_TEXT: [&str; 137] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -637,20 +637,21 @@ const MENU_TEXT: [&str; 136] = [
     "Shelf",                              // 133, Interface: whose wallpaper
     "Cheats",                             // 134, game menu (Siham 2026-11-09)
     "PlayStation",                        // 135
+    "TurboGrafx-CD",                      // 136
 ];
 
 /// Settings > Systems, top to bottom.
-const SYSTEM_ORDER: [Platform; 7] = [
+const SYSTEM_ORDER: [Platform; 8] = [
     Platform::Gba, Platform::Gbc, Platform::Gb,
-    Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx,
+    Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx, Platform::Tgcd,
 ];
-const SYSTEM_TITLES: [usize; 7] = [91, 92, 93, 121, 122, 123, 135];
+const SYSTEM_TITLES: [usize; 8] = [91, 92, 93, 121, 122, 123, 135, 136];
 // Special racks follow the supported platforms, not hard-coded GB-era indices.
 const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 115] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 116] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -679,7 +680,7 @@ const SETTING_VALUE_NAMES: [&str; 115] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "Super Eagle", "xBR-lv2",
                                "Pixel Transparency", "Sunlight Shimmer",
                                "Dot Matrix Color",
-                               "PCSX-ReARMed"];
+                               "PCSX-ReARMed", "Beetle PCE Fast"];
 
 /// The value face (an index in SETTING_VALUE_NAMES) a Settings key shows,
 /// None for an action-only row. Every key a menu lists must have one: the
@@ -755,6 +756,12 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         48 => shader(scoped.shader_snes),
         49 => shader(scoped.shader_md),
         70 => shader(scoped.shader_psx),
+        73 => shader(scoped.shader_tgcd),
+        74 => match scoped.blending_for(Platform::Tgcd) {
+            crate::settings::Blending::Off => 5,
+            crate::settings::Blending::Mix => 96,
+            crate::settings::Blending::Ghosting => 97,
+        },
         // The game's own in game, the system's in Settings > Systems.
         71 => match scoped.blending_for(Platform::Psx) {
             crate::settings::Blending::Off => 5,
@@ -841,6 +848,7 @@ fn core_value(core: Core) -> usize {
     match core {
         Core::Mgba => 50, Core::Gpsp => 51, Core::Gambatte => 52,
         Core::PcsxRearmed => 114,
+        Core::MednafenPceFast => 115,
         other => 70 + other.index() - Core::Fceumm.index(),
     }
 }
@@ -3426,7 +3434,7 @@ impl Engine {
                 }
                 // Changed hotkeys have their own dispatcher; untouched ones
                 // run through slot.'s original gestures below.
-                self.controls.hotkeys.disc = self.game.is_some() && self.current_cart_platform().disc();
+                self.controls.hotkeys.disc = self.game.is_some() && self.current_cart_platform() == Platform::Psx;
                 if self.game.is_some() && !self.controls.hotkeys.is_default()
                     && self.custom_hotkey(code, pressed) { return; }
                 if code == 109 { self.select_physical = pressed; }
@@ -3824,7 +3832,8 @@ impl Engine {
                         }
                         return;
                     }
-                    let disc = self.current_cart_platform().disc();
+                    // Only the PlayStation plays L2 / R2 (the TurboGrafx-CD leaves them to slot.).
+                    let disc = self.current_cart_platform() == Platform::Psx;
                     if disc && self.disc_time_key(code, pressed) { return; }
                     if self.handle_select_chord(code, pressed) { return; }
                     if pressed && self.select_down_at.is_some() && !self.select_chorded {
@@ -4877,7 +4886,7 @@ impl Engine {
             (Platform::Snes|Platform::Md,false)=>&[120,124],
             (Platform::Snes|Platform::Md,true)=>&[120,124,90],
             // No overlay for the PlayStation yet.
-            (Platform::Psx,_)=>&[120,124],
+            (Platform::Psx | Platform::Tgcd,_)=>&[120,124],
         }
     }
     fn screen_keys(platform: Platform)-> &'static [usize] {
@@ -4899,6 +4908,7 @@ impl Engine {
             (Platform::Snes,true)=>&[SCREEN_SIZE_KEY,48,45],
             (Platform::Md,true)=>&[SCREEN_SIZE_KEY,49,46],
             (Platform::Psx,_)=>&[SCREEN_SIZE_KEY,70],
+            (Platform::Tgcd,_)=>&[SCREEN_SIZE_KEY,73],
         }
     }
     // Settings > Systems opens with the system's default core, then its
@@ -4965,8 +4975,8 @@ impl Engine {
             (Platform::Nes|Platform::Snes|Platform::Md,false,false)=>&[118,120,124],
             (Platform::Nes|Platform::Snes|Platform::Md,false,true)=>&[118,120,124,90],
             // One core: no Default Core row.
-            (Platform::Psx,true,_)=>&[124],
-            (Platform::Psx,false,_)=>&[120,124],
+            (Platform::Psx | Platform::Tgcd,true,_)=>&[124],
+            (Platform::Psx | Platform::Tgcd,false,_)=>&[120,124],
         }
     }
     fn system_keys(platform: Platform)-> &'static [usize] {
@@ -4996,6 +5006,8 @@ impl Engine {
             (Platform::Md,false,true)=>&[43,SCREEN_SIZE_KEY,49,46],
             (Platform::Psx,true,_)=>&[70],
             (Platform::Psx,false,_)=>&[SCREEN_SIZE_KEY,70],
+            (Platform::Tgcd,true,_)=>&[73],
+            (Platform::Tgcd,false,_)=>&[SCREEN_SIZE_KEY,73],
         }
     }
     fn core_key_platform(key:usize)->Option<Platform> {
@@ -6499,7 +6511,7 @@ impl Engine {
                 Platform::Nes => self.home_chip_blanks[0],
                 Platform::Snes => self.home_chip_blanks[1],
                 // PlayStation games borrow the Mega Drive shell.
-                Platform::Md | Platform::Psx => self.home_chip_blanks[2],
+                Platform::Md | Platform::Psx | Platform::Tgcd => self.home_chip_blanks[2],
                 _ => self.pak_chip_blank,
             };
             (&self.pak_chip_textures, blank)
@@ -8140,7 +8152,7 @@ mod settings_value_tests {
     #[test]
     fn each_system_page_changes_only_its_own_system() {
         // Default core, shader, colour/palette and overlay keys of each page.
-        let own: [(Platform, &[usize]); 7] = [
+        let own: [(Platform, &[usize]); 8] = [
             (Platform::Gba, &[29, 0, 22, 25]),
             (Platform::Gbc, &[30, 21, 23, 26]),
             (Platform::Gb, &[31, 1, 3, 27]),
@@ -8148,6 +8160,7 @@ mod settings_value_tests {
             (Platform::Snes, &[42, 48, 45]),
             (Platform::Md, &[43, 49, 46]),
             (Platform::Psx, &[70]),
+            (Platform::Tgcd, &[73]),
         ];
         for (platform, keys) in own {
             for panel in PANELS {

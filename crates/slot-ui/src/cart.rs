@@ -86,7 +86,8 @@ pub enum Body {
 
 pub fn gb_shell_of(cart: &Cart) -> Option<GbShell> {
     match cart.platform {
-        Platform::Gba | Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx => None,
+        Platform::Gba | Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx
+        | Platform::Tgcd => None,
         Platform::Gb | Platform::Gbc => Some(match cart.shell.map(|c| c.outline) {
             Some(Outline::Notched) => GbShell::Notched,
             Some(Outline::Rounded) => GbShell::Rounded,
@@ -113,7 +114,7 @@ pub fn platform_body(platform: Platform) -> Body {
     match platform {
         Platform::Gba => Body::Gba,
         Platform::Gb | Platform::Gbc => Body::Gb(GbShell::Notched),
-        Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx => {
+        Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx | Platform::Tgcd => {
             Body::Home(HomeMould::default_for(platform).unwrap_or(HomeMould::Nes))
         }
     }

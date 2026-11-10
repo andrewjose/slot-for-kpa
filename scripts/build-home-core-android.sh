@@ -3,7 +3,7 @@
 # libretro cores, each from a pinned upstream commit with the core's own
 # Android recipe (jni/Android.mk). No BIOS or ROMs.
 # Usage: build-home-core-android.sh CORE
-#   fceumm nestopia snes9x bsnes genesis_plus_gx picodrive pcsx_rearmed
+#   fceumm nestopia snes9x bsnes genesis_plus_gx picodrive pcsx_rearmed mednafen_pce_fast
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NDK="${ANDROID_NDK_HOME:-${ANDROID_SDK_ROOT:?Set ANDROID_NDK_HOME or ANDROID_SDK_ROOT}/ndk/27.2.12479018}"
@@ -21,6 +21,8 @@ case "$CORE" in
   picodrive)       REPO=picodrive;        PIN=1890c2932234c9d30f4cd3851d02228baae8f09e; JNI=jni;                         LICENCE=COPYING; SUBMODULES=1 ;;
   # ARM64 dynarec + NEON GPU; its deps are vendored, not submodules.
   pcsx_rearmed)    REPO=pcsx_rearmed;     PIN=7b0e8f8fadfbce3d170d195b9d9eecaabfa08c8e; JNI=jni;                         LICENCE=COPYING ;;
+  # Beetle PCE Fast (TurboGrafx-CD), with its own CHD reader.
+  mednafen_pce_fast) REPO=beetle-pce-fast-libretro; PIN=2de1ce1c3f237b161c126c54ba407990bb86d1e9; JNI=jni; LICENCE=COPYING ;;
   *) echo "Unknown home console core: $CORE" >&2; exit 1 ;;
 esac
 OUT="$ROOT/.build/$CORE"

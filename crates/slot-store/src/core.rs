@@ -19,13 +19,15 @@ pub enum Core {
     GenesisPlusGx,
     Picodrive,
     PcsxRearmed,
+    /// Beetle PCE Fast, the TurboGrafx-CD's (System Card BIOS needed).
+    MednafenPceFast,
 }
 
 impl Core {
-    pub const ALL: [Core; 10] = [
+    pub const ALL: [Core; 11] = [
         Core::Mgba, Core::Gpsp, Core::Gambatte,
         Core::Fceumm, Core::Nestopia, Core::Snes9x, Core::Bsnes,
-        Core::GenesisPlusGx, Core::Picodrive, Core::PcsxRearmed,
+        Core::GenesisPlusGx, Core::Picodrive, Core::PcsxRearmed, Core::MednafenPceFast,
     ];
 
     /// libretro's own core name: lib{as_str}_libretro.so, and the key
@@ -42,6 +44,7 @@ impl Core {
             Core::GenesisPlusGx => "genesis_plus_gx",
             Core::Picodrive => "picodrive",
             Core::PcsxRearmed => "pcsx_rearmed",
+            Core::MednafenPceFast => "mednafen_pce_fast",
         }
     }
 
@@ -70,6 +73,7 @@ impl Core {
             Core::GenesisPlusGx => "Genesis Plus GX",
             Core::Picodrive => "PicoDrive",
             Core::PcsxRearmed => "PCSX-ReARMed",
+            Core::MednafenPceFast => "Beetle PCE Fast",
         }
     }
 
@@ -90,6 +94,7 @@ impl Core {
             Platform::Snes => Core::Snes9x,
             Platform::Md => Core::GenesisPlusGx,
             Platform::Psx => Core::PcsxRearmed,
+            Platform::Tgcd => Core::MednafenPceFast,
         }
     }
 
@@ -104,13 +109,15 @@ impl Core {
             Platform::Snes => Core::Bsnes,
             Platform::Md => Core::Picodrive,
             Platform::Psx => Core::PcsxRearmed,
+            Platform::Tgcd => Core::MednafenPceFast,
         }
     }
 
     /// Which of the board's two sockets this core sits in.
     pub fn socket(self) -> usize {
         match self {
-            Core::Mgba | Core::Fceumm | Core::Snes9x | Core::GenesisPlusGx | Core::PcsxRearmed => 0,
+            Core::Mgba | Core::Fceumm | Core::Snes9x | Core::GenesisPlusGx | Core::PcsxRearmed
+            | Core::MednafenPceFast => 0,
             Core::Gpsp | Core::Gambatte | Core::Nestopia | Core::Bsnes | Core::Picodrive => 1,
         }
     }
@@ -156,6 +163,7 @@ fn default_key(platform: Platform) -> &'static str {
         Platform::Snes => "snes",
         Platform::Md => "md",
         Platform::Psx => "psx",
+        Platform::Tgcd => "tgcd",
     }
 }
 

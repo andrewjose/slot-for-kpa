@@ -573,3 +573,21 @@ fn playstation_pages_and_its_rewind_default() {
     assert_eq!(engine.settings.shader_psx, crate::settings::Shader::ZfastCrt);
     assert_eq!(engine.settings.shader_md, crate::settings::Shader::ZfastCrt, "untouched default");
 }
+
+#[test]
+fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
+    // One core: Screen Size, Shader, Frame Blending, Controls.
+    assert_eq!(Engine::system_page_rows(Platform::Tgcd), vec![120, 124, 126, 125]);
+    assert_eq!(Engine::system_page_keys(Platform::Tgcd), vec![SCREEN_SIZE_KEY, 73, 74, usize::MAX]);
+    assert_eq!(Engine::screen_keys(Platform::Tgcd), &[SCREEN_SIZE_KEY, 73]);
+    assert_eq!(MENU_TEXT[136], "TurboGrafx-CD");
+    assert_eq!(SETTING_VALUE_NAMES[core_value(Core::MednafenPceFast)], "Beetle PCE Fast");
+    assert!(Core::single(Platform::Tgcd) && Platform::Tgcd.disc());
+    // Its pad has no L2 / R2: they stay Fast Forward and Rewind.
+    assert_eq!(game_controls(104, Platform::Tgcd == Platform::Psx), 0);
+    assert!(!crate::controls::console_buttons("tgcd").iter().any(|b| b.name == "L2"));
+    let mut settings = crate::settings::Settings::default();
+    assert!(settings.change(73, true));
+    assert_eq!(settings.shader_tgcd, crate::settings::Shader::ZfastCrt);
+    assert_eq!(settings.shader_psx, crate::settings::Shader::Off, "its own shader");
+}

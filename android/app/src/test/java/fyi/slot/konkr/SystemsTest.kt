@@ -46,6 +46,21 @@ class SystemsTest {
         assertTrue("psp" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
     }
 
+    @Test fun aChdInATurboGrafxCdFolderIsATurboGrafxCdGame() {
+        assertEquals("TGCD", Systems.platformFor("chd", tgcdFolder = true))
+        assertEquals("PSX", Systems.platformFor("chd", tgcdFolder = false))
+        assertEquals("a PBP is the PlayStation's", "PSX", Systems.platformFor("pbp", tgcdFolder = true))
+        assertTrue(Systems.isTgcdFolder("tg-cd") && Systems.isTgcdFolder("PCEngineCD"))
+        assertFalse(Systems.isTgcdFolder("psx"))
+        assertFalse("tg-cd" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+        assertFalse("pcenginecd" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+        // The native side's pick names the core of a CHD.
+        assertEquals("Beetle PCE Fast", Systems.coreFolder("mednafen_pce_fast", "chd"))
+        assertEquals("PCSX-ReARMed", Systems.coreFolder("", "chd"))
+        assertEquals(setOf("Beetle PCE Fast"), Systems.coreFoldersFor("TGCD"))
+        assertEquals("mednafen_pce_fast", Systems.keyForFolder("Beetle PCE Fast"))
+    }
+
     @Test fun binNeedsASegaHeader() {
         val sega = ByteArray(0x200).also { "SEGA GENESIS    ".toByteArray().copyInto(it, 0x100) }
         assertTrue(Systems.acceptsHeader("bin", sega))

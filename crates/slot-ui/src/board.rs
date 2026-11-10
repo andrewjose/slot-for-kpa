@@ -214,7 +214,7 @@ fn home_chip_body(m: HomeMould, w: u32, h: u32) -> CartFace {
 
 /// The system a home console core runs, None for the handheld cores.
 fn home_platform(core: Core) -> Option<Platform> {
-    [Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx].into_iter().find(|p| core.runs(*p))
+    [Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx, Platform::Tgcd].into_iter().find(|p| core.runs(*p))
 }
 
 /// The big chip a home console core's name is printed on, at the size of
