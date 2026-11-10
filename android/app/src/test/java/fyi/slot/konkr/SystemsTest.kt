@@ -41,6 +41,9 @@ class SystemsTest {
         assertTrue("chd" in Systems.ROM_EXTENSIONS)
         assertEquals("ab12.chd", DiscSource.linkName("ab12", "CHD"))
         assertEquals("/proc/self/fd/57", DiscSource.fdPath(57))
+        // ES-DE's psx folder is searched now that slot. plays it.
+        assertFalse("psx" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+        assertTrue("psp" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
     }
 
     @Test fun binNeedsASegaHeader() {
