@@ -68,7 +68,7 @@ All of this without losing what makes slot. special: **the simple pleasure of ch
 ## Getting Started
 
 1. Download the latest APK from [Releases](https://github.com/Baggio94/slot-for-android/releases/latest) and install it on your Android handheld (ARM64, Android 12 or later).
-2. Open **slot.**, press **START → Library → Choose ROM Folder** and pick the folder containing your games.
+2. Open **slot.**, press **START → Library → Choose ROM Folder** and pick the folder containing your games. Once it is set, Choose ROM Folder also offers **One System**: a folder of that system's own (on the SD card, say), which replaces the All Systems folder for its games.
 3. Your cartridges appear in the carousel. Pick one and play!
 
 **Supported files:** `.gba`, `.gb`, `.gbc`, `.nes`, `.fc`, `.unf`, `.unif`, `.sfc`, `.smc`, `.md`, `.gen`, `.smd`, `.bin`, and `.zip` archives holding one game each. Keep your games in one folder or in one folder per system, ES-DE style.
