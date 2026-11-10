@@ -31,7 +31,7 @@ impl Engine {
         let platform = self.current_cart_platform();
         // A disc is hundreds of MB, and there's no PlayStation pack yet.
         if platform.disc() {
-            set_message("No cheats for PlayStation games yet.".into());
+            set_message(format!("No cheats for {} games yet.", platform.name()));
             return;
         }
         let started = Instant::now();

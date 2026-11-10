@@ -106,7 +106,7 @@ jobs:
       - name: Build NES, SNES, Mega Drive and PlayStation arm64 libretro cores
         run: |
           export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
-          for core in fceumm nestopia snes9x bsnes genesis_plus_gx picodrive pcsx_rearmed; do
+          for core in fceumm nestopia snes9x bsnes genesis_plus_gx picodrive pcsx_rearmed mednafen_pce_fast; do
             bash scripts/build-home-core-android.sh "$core"
           done
       - name: Assemble debug APK (fixed test key, side-by-side package)
@@ -126,7 +126,7 @@ jobs:
           APK=android/app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | head -1
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | grep -F "package: name='fyi.slot.konkr.diag'"
-          for core in slot_android mgba_libretro gpsp_libretro gambatte_libretro fceumm_libretro nestopia_libretro snes9x_libretro bsnes_libretro genesis_plus_gx_libretro picodrive_libretro pcsx_rearmed_libretro; do
+          for core in slot_android mgba_libretro gpsp_libretro gambatte_libretro fceumm_libretro nestopia_libretro snes9x_libretro bsnes_libretro genesis_plus_gx_libretro picodrive_libretro pcsx_rearmed_libretro mednafen_pce_fast_libretro; do
             unzip -Z -1 "$APK" | grep -Fx "lib/arm64-v8a/lib${core}.so"
           done
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -i "SHA-256"

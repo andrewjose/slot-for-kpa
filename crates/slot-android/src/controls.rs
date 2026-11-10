@@ -496,8 +496,13 @@ const PSX: [ConsoleButton; 14] = [DPAD[0], DPAD[1], DPAD[2], DPAD[3],
     cb("L1", bit::L), cb("R1", bit::R), cb("L2", bit::L2), cb("R2", bit::R2),
     cb("SELECT", bit::SELECT), cb("START", bit::START)];
 
+/// Beetle PCE Fast's two-button pad, as RetroArch maps it: I from A, II
+/// from B, RUN from START.
+const TGCD: [ConsoleButton; 8] = [DPAD[0], DPAD[1], DPAD[2], DPAD[3],
+    cb("I", bit::A), cb("II", bit::B), cb("SELECT", bit::SELECT), cb("RUN", bit::START)];
+
 /// Systems, by the names slot. files their controls under.
-pub const SYSTEMS: [&str; 7] = ["gba", "gbc", "gb", "nes", "snes", "md", "psx"];
+pub const SYSTEMS: [&str; 8] = ["gba", "gbc", "gb", "nes", "snes", "md", "psx", "tgcd"];
 
 pub fn console_buttons(system: &str) -> &'static [ConsoleButton] {
     match system {
@@ -505,12 +510,13 @@ pub fn console_buttons(system: &str) -> &'static [ConsoleButton] {
         "snes" => &SNES,
         "md" => &MD,
         "psx" => &PSX,
+        "tgcd" => &TGCD,
         _ => &TWO_BUTTONS,
     }
 }
 
 /// Only the home consoles take a second player.
-pub fn takes_port2(system: &str) -> bool { matches!(system, "nes" | "snes" | "md" | "psx") }
+pub fn takes_port2(system: &str) -> bool { matches!(system, "nes" | "snes" | "md" | "psx" | "tgcd") }
 
 /// What X and Y do on a console without them (Game Boys, NES).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -557,8 +563,8 @@ impl ShoulderRole {
 }
 
 /// X / Y and L1 / R1 rows: on which systems they are spare.
-pub fn spare_xy(system: &str) -> bool { matches!(system, "gba" | "gb" | "gbc" | "nes") }
-pub fn spare_shoulders(system: &str) -> bool { matches!(system, "gb" | "gbc" | "nes") }
+pub fn spare_xy(system: &str) -> bool { matches!(system, "gba" | "gb" | "gbc" | "nes" | "tgcd") }
+pub fn spare_shoulders(system: &str) -> bool { matches!(system, "gb" | "gbc" | "nes" | "tgcd") }
 
 /// One port's choices at one level. Only what was changed there is kept.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -14,12 +14,14 @@ pub enum Platform {
     Md,
     /// PlayStation: discs, read from the library where they are.
     Psx,
+    /// TurboGrafx-CD / PC Engine CD-ROM: discs, like the PlayStation.
+    Tgcd,
 }
 
 impl Platform {
-    pub const ALL: [Platform; 7] = [
+    pub const ALL: [Platform; 8] = [
         Platform::Gba, Platform::Gb, Platform::Gbc,
-        Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx,
+        Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx, Platform::Tgcd,
     ];
 
     pub fn name(self) -> &'static str {
@@ -31,6 +33,7 @@ impl Platform {
             Platform::Snes => "Super Nintendo",
             Platform::Md => "Mega Drive",
             Platform::Psx => "PlayStation",
+            Platform::Tgcd => "TurboGrafx-CD",
         }
     }
 
@@ -43,6 +46,7 @@ impl Platform {
             Platform::Snes => "SNES",
             Platform::Md => "MD",
             Platform::Psx => "PSX",
+            Platform::Tgcd => "TGCD",
         }
     }
 
@@ -62,6 +66,8 @@ impl Platform {
             // Single-file disc images only: a .cue names other files,
             // which a library folder can't hand over by name.
             Platform::Psx => &["chd", "pbp"],
+            // A CHD is either system's: the library folder tells (Android).
+            Platform::Tgcd => &["chd"],
         }
     }
 
@@ -74,7 +80,7 @@ impl Platform {
     /// A disc system: the game stays in the library (hundreds of MB),
     /// the core reads it by path.
     pub fn disc(self) -> bool {
-        self == Platform::Psx
+        matches!(self, Platform::Psx | Platform::Tgcd)
     }
 
     /// The usual picture: for the home consoles, what the core shows most
@@ -87,6 +93,7 @@ impl Platform {
             Platform::Snes => (256, 224),
             Platform::Md => (320, 224),
             Platform::Psx => (320, 240),
+            Platform::Tgcd => (256, 224),
         }
     }
 

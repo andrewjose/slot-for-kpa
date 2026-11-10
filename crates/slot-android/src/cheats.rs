@@ -33,7 +33,7 @@ fn pack(platform: Platform) -> Option<&'static [u8]> {
         Platform::Nes => include_bytes!("../cheats/nes.cht.z"),
         Platform::Snes => include_bytes!("../cheats/snes.cht.z"),
         Platform::Md => include_bytes!("../cheats/md.cht.z"),
-        Platform::Psx => return None,
+        Platform::Psx | Platform::Tgcd => return None,
     })
 }
 

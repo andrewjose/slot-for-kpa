@@ -85,6 +85,7 @@ impl Engine {
             Platform::Gba => "gba", Platform::Gbc => "gbc", Platform::Gb => "gb",
             Platform::Nes => "nes", Platform::Snes => "snes", Platform::Md => "md",
             Platform::Psx => "psx",
+            Platform::Tgcd => "tgcd",
         }
     }
 
@@ -363,7 +364,7 @@ impl Engine {
                 // joypad bit: L2, R2, L3 and R3 are slot.'s, not the game's
                 // (a PlayStation game plays L2 and R2).
                 let slot = self.controls.slot_code(fp, code, false)
-                    .map_or(0, |slot| super::game_controls(slot, platform.disc()));
+                    .map_or(0, |slot| super::game_controls(slot, platform == Platform::Psx));
                 if slot == 0 {
                     set_message("This button can't play in games.".into());
                     return;
@@ -408,14 +409,14 @@ impl Engine {
     }
 
     fn press_port2(&mut self, slot: i32) {
-        let mask = super::game_controls(slot, self.current_cart_platform().disc());
+        let mask = super::game_controls(slot, self.current_cart_platform() == Platform::Psx);
         self.buttons2 |= mask;
         self.unseen2 |= mask;
         self.held_releases2 &= !mask;
     }
 
     fn release_port2(&mut self, slot: i32) {
-        let mask = super::game_controls(slot, self.current_cart_platform().disc());
+        let mask = super::game_controls(slot, self.current_cart_platform() == Platform::Psx);
         if self.unseen2 & mask != 0 { self.held_releases2 |= mask; }
         else { self.buttons2 &= !mask; }
     }

@@ -54,7 +54,9 @@ internal object RomLibrary {
     }
     internal fun sameIndex(before: String, after: String): Boolean =
         equivalentEntries(indexEntries(before), indexEntries(after))
-    private data class Directory(val id: String, val depth: Int, val folder: String)
+    /** `tgcd`: inside a TurboGrafx-CD folder (Systems.isTgcdFolder). */
+    private data class Directory(val id: String, val depth: Int, val folder: String,
+                                 val tgcd: Boolean = false)
     /** A cart file listed in the first pass, read in the second. */
     private data class Candidate(val id: String, val name: String, val extension: String,
                                  val size: Long, val modified: Long, val dir: Directory)
@@ -77,7 +79,8 @@ internal object RomLibrary {
      */
     fun scan(context: Context, treeUri: Uri, oldGamesJson: String? = null,
              progress: ((done: Int, total: Int) -> Unit)? = null,
-             shelve: ((platform: String, colorOnly: Boolean) -> String?)? = null): ScanResult {
+             shelve: ((platform: String, colorOnly: Boolean) -> String?)? = null,
+             tgcdTree: Boolean = false): ScanResult {
         val previous = HashMap<String, JSONObject>()
         val cachedJson = oldGamesJson ?: try {
             val cache = java.io.File(context.filesDir, "rom-library-cache-v1.json")
@@ -109,7 +112,7 @@ internal object RomLibrary {
         val seen = HashSet<String>()
         // Search the user-selected SAF tree, including custom layouts, but
         // skip folders that ES-DE names after systems slot. does not run.
-        pending.add(Directory(rootId, 0, ""))
+        pending.add(Directory(rootId, 0, "", tgcdTree))
         android.util.Log.i("SlotKonkr", "ROM scan scope: selected tree without other systems' folders")
         val games = JSONArray()
         var directories = 0
@@ -149,7 +152,8 @@ internal object RomLibrary {
                     if (name.startsWith(".")) continue
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         if (dir.depth < MAX_DEPTH && !ignoredDirectory(name)) {
-                            pending.add(Directory(id, dir.depth + 1, name))
+                            pending.add(Directory(id, dir.depth + 1, name,
+                                dir.tgcd || Systems.isTgcdFolder(name)))
                         }
                         continue
                     }
@@ -273,7 +277,7 @@ internal object RomLibrary {
                 val gbColor = !gba && !home && (embeddedExtension == "gbc" || colorOnly ||
                     container == "gbc" || container == "game boy color")
                 platform = when {
-                    home -> Systems.platformFor(embeddedExtension)!!
+                    home -> Systems.platformFor(embeddedExtension, dir.tgcd)!!
                     gba -> "GBA"
                     gbColor -> "GBC"
                     else -> "GB"
@@ -357,11 +361,11 @@ internal object RomLibrary {
         "msx2", "msxturbor", "mugen", "multivision", "n3ds", "n64", "n64dd", "naomi",
         "naomi2", "naomigd", "nds", "neogeo", "neogeocd", "neogeocdjp", "ngage", "ngp",
         "ngpc", "odyssey2", "openbor", "oric", "palm", "pc", "pc88", "pc98", "pcarcade",
-        "pcengine", "pcenginecd", "pcfx", "pico8", "plus4", "pokemini", "ports", "ps2", "ps3",
+        "pcengine", "pcfx", "pico8", "plus4", "pokemini", "ports", "ps2", "ps3",
         "ps4", "psp", "psvita", "pv1000", "quake", "samcoupe", "saturn", "saturnjp",
         "scummvm", "scv", "sega32x", "sega32xjp", "sega32xna", "segacd", "sg-1000",
         "solarus", "spectravideo", "steam", "stv", "supergrafx", "supervision", "supracan",
-        "switch", "symbian", "tanodragon", "tg16", "tg-cd", "ti99", "tic80", "to8", "trs-80",
+        "switch", "symbian", "tanodragon", "tg16", "ti99", "tic80", "to8", "trs-80",
         "uzebox", "vectrex", "vic20", "videopac", "virtualboy", "vpinball", "vsmile",
         "wasm4", "wii", "wiiu", "windows", "windows3x", "windows9x", "wonderswan",
         "wonderswancolor", "x1", "x68000", "xbox", "xbox360", "zmachine", "zx81", "zxnext",

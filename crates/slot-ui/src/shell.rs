@@ -126,7 +126,8 @@ pub fn shell_for(cart: &Cart) -> Shell {
     match cart.platform {
         Platform::Gba => gba_shell_for(&cart.code),
         Platform::Gb | Platform::Gbc => gb_shell_for(&cart.rom),
-        Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx => crate::home::home_mould_of(cart)
+        Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx | Platform::Tgcd =>
+            crate::home::home_mould_of(cart)
             .map_or(DEFAULT_SHELL, |m| shell(m.art().colour, Finish::Solid)),
     }
 }
@@ -371,6 +372,6 @@ pub fn system_swatches(platform: Platform) -> &'static [Swatch] {
         Platform::Nes => NES_SWATCHES,
         Platform::Snes => SNES_SWATCHES,
         Platform::Md => MD_SWATCHES,
-        Platform::Psx => PSX_SWATCHES,
+        Platform::Psx | Platform::Tgcd => PSX_SWATCHES,
     }
 }

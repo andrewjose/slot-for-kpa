@@ -1653,8 +1653,8 @@ class MainActivity : Activity() {
                 val read = { key: String -> prefs.getString(key, null) }
                 val storage = SlotBuildBehavior.storagePolicy(
                     packageName,
-                    SaveFolders.resolve(read, SAVE_ROOT, ext),
-                    SaveFolders.resolve(read, STATE_ROOT, ext),
+                    SaveFolders.resolve(read, SAVE_ROOT, ext, core),
+                    SaveFolders.resolve(read, STATE_ROOT, ext, core),
                     prefs.getBoolean(SHARE_GBA_SAVES, false)
                 )
                 val saves = storage.savesRoot?.let(Uri::parse)
@@ -3560,7 +3560,8 @@ class MainActivity : Activity() {
             val part = RomLibrary.scan(this, Uri.parse(root.uri), previous,
                 progress?.let { report -> { done: Int, total: Int ->
                     report(offset + done, if (total == 0) 0 else offset + total)
-                } }) { platform, colorOnly -> RomFolders.shelve(root, platform, colorOnly, own) }
+                } }, { platform, colorOnly -> RomFolders.shelve(root, platform, colorOnly, own) },
+                tgcdTree = root.system == RomFolders.System.TGCD)
             truncated = truncated || part.truncated
             parts.add(part.json)
             before += part.count

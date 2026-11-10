@@ -93,6 +93,13 @@ class SaveFoldersTest {
         assertEquals(setOf("Snes9x", "bsnes"), SaveFolders.Console.SNES.cores)
         assertEquals(setOf("Genesis Plus GX", "PicoDrive"), SaveFolders.Console.MD.cores)
         assertEquals(setOf("PCSX-ReARMed"), SaveFolders.Console.PSX.cores)
+        assertEquals(setOf("Beetle PCE Fast"), SaveFolders.Console.TGCD.cores)
+        // A TurboGrafx-CD disc (a CHD) goes to its own folder by its core.
+        val prefs = mapOf(SaveFolders.SAVE_ROOT to "content://all",
+            SaveFolders.key(SaveFolders.SAVE_ROOT, SaveFolders.Console.TGCD) to "content://tgcd")
+        assertEquals("content://tgcd", SaveFolders.resolve(prefs::get, SaveFolders.SAVE_ROOT, "chd", "Beetle PCE Fast"))
+        assertEquals("content://all", SaveFolders.resolve(prefs::get, SaveFolders.SAVE_ROOT, "chd", "PCSX-ReARMed"))
+        assertEquals("content://all", SaveFolders.resolve(prefs::get, SaveFolders.SAVE_ROOT, "gba", "mGBA"))
         assertEquals(SaveFolders.Console.PSX, SaveFolders.Console.forExtension("pbp"))
     }
 
