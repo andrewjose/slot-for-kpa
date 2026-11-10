@@ -5,6 +5,8 @@ This changelog covers the public releases of slot. for Android, an Android port 
 ## Unreleased
 
 - Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder offer All Systems or One System (GBA, GBC, GB, NES, Super Nintendo, Mega Drive). A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems. A system's folder receives only that system's saves or states when chosen (by core, or by the library game for mGBA and Gambatte); the All Systems folder the rest.
+- LCD Effect parameters: A on Systems → LCD Effect (or the in-game Screen row) opens Transparency, Color, Shadows, Sunlight Shimmer and Glare & Texture pages with the shader's own parameters, in its units and ranges, plus Reset to Defaults; shared by GB, GBC and GBA; Y in game previews. The defaults are the values the effect had (the shader takes them as uniforms; renders unchanged).
+- An LCD Effect holds the game at Integer: launching with it on, or turning it on, switches to Integer with "Screen: Integer (LCD)"; other sizes are refused with the same banner, and the chosen size comes back when it's off.
 
 ## v2.2.1 — 10 November 2026
 

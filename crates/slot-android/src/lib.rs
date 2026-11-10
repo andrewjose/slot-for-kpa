@@ -4,6 +4,7 @@
 mod library;
 mod cart_disk_cache;
 mod settings;
+mod lcd_params;
 mod controls;
 mod frame_blend;
 mod dither_blend;

@@ -483,6 +483,10 @@ pub struct Settings {
     /// transparency (Systems > Mega Drive > Dither Blending).
     #[serde(default)]
     pub dither_blend_md: bool,
+    /// The LCD Effect's parameters, shared by the Game Boy systems (A on a
+    /// system's LCD Effect row).
+    #[serde(default)]
+    pub lcd_params: crate::lcd_params::LcdSettings,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -515,7 +519,8 @@ impl Default for Settings {
             blending_nes: Blending::Off, blending_snes: Blending::Off, blending_md: Blending::Off,
             blending_psx: Blending::Off,
             lcd_effect_gba: LcdEffect::Off, lcd_effect_gbc: LcdEffect::Off, lcd_effect_gb: LcdEffect::Off,
-            dither_blend_md: false }
+            dither_blend_md: false,
+            lcd_params: crate::lcd_params::LcdSettings::default() }
     }
 }
 impl Settings {
@@ -616,6 +621,7 @@ impl Settings {
                 }
                 if !Shader::HOME.contains(&s.shader_psx) { s.shader_psx = Shader::Off; }
                 if s.gb_palette as usize >= GbPalette::COUNT { s.gb_palette = 1; }
+                s.lcd_params = s.lcd_params.sanitize();
                 if !REWIND_SPEEDS.contains(&s.rewind_speed) { s.rewind_speed = 2; }
                 if s.run_ahead_frames > 2 { s.run_ahead_frames = 0; }
                 // Before this version all three toggles defaulted ON.

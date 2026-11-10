@@ -32,7 +32,7 @@ jobs:
       - name: Test real EGL context destruction and graphics recovery
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
-        run: cargo test --locked -p slot-gfx --no-default-features --features test-support --test context_recovery
+        run: cargo test --locked -p slot-gfx --no-default-features --features test-support --test context_recovery --test lcd_effect
       - name: Test the production session and runtime on Linux
         run: |
           set -euo pipefail

@@ -22,6 +22,9 @@ struct GameProgram {
     u_pic: gl::types::GLint,
     u_src: gl::types::GLint,
     u_light: gl::types::GLint,
+    u_shadow: gl::types::GLint,
+    /// The LCD Effect's parameters (lcd_params.rs); -1 without an effect.
+    u_pt: [gl::types::GLint; 6],
     u_dm_fg: gl::types::GLint,
     u_dm_bgc: gl::types::GLint,
     u_dm_lum: gl::types::GLint,
@@ -41,8 +44,6 @@ impl GameProgram {
             gl::Uniform2f(at("u_target"), out_w() as f32, OUT_H as f32);
             gl::Uniform1i(at("u_paper"), 1);
             gl::Uniform1i(at("u_dm_bg"), 2);
-            // Pixel Transparency's drop shadow: 3,3 at 640x480.
-            gl::Uniform2f(at("u_shadow"), 3.0, 3.0);
         }
         Ok(GameProgram {
             prog,
@@ -55,6 +56,8 @@ impl GameProgram {
             u_pic: at("u_pic"),
             u_src: at("u_src"),
             u_light: at("u_light"),
+            u_shadow: at("u_shadow"),
+            u_pt: ["u_pt0", "u_pt1", "u_pt2", "u_pt3", "u_pt4", "u_pt5"].map(at),
             u_dm_fg: at("u_dm_fg"),
             u_dm_bgc: at("u_dm_bgc"),
             u_dm_lum: at("u_dm_lum"),
@@ -151,6 +154,8 @@ pub struct GamePass {
     lcd: LcdEffect,
     /// Sunlight Shimmer's light, 0..1 over the picture.
     light: [f32; 2],
+    /// The LCD Effect's parameters.
+    lcd_params: crate::LcdParams,
     /// Dot Matrix: background, dots, then the lightest and darkest shade
     /// the game draws (0xRRGGBB).
     dot_palette: [u32; 4],
@@ -185,6 +190,7 @@ impl GamePass {
         target.lcd = self.lcd;
         target.set_effect(self.effect);
         target.light = self.light;
+        target.lcd_params = self.lcd_params;
         target.dot_palette = self.dot_palette;
         if let Some((size, rgba)) = &self.dot_bg_pixels {
             target.set_dot_background(*size, rgba);
@@ -225,6 +231,7 @@ impl GamePass {
             effect,
             lcd: LcdEffect::Off,
             light: [0.5, 0.5],
+            lcd_params: crate::LcdParams::default(),
             dot_palette: [0xD9C425, 0x1D6A6B, 0xFFFFFF, 0x000000],
             dot_bg,
             dot_bg_pixels: None,
@@ -272,6 +279,11 @@ impl GamePass {
             }
         }
         true
+    }
+
+    /// The LCD Effect's parameters (Pixel Transparency, Sunlight Shimmer).
+    pub fn set_lcd_params(&mut self, params: crate::LcdParams) {
+        self.lcd_params = params;
     }
 
     /// Sunlight Shimmer's light position, 0..1 over the picture.
@@ -433,6 +445,13 @@ impl GamePass {
             gl::Uniform2f(p.u_fbo, self.fbo_scale[0], self.fbo_scale[1]);
             gl::Uniform4f(p.u_pic, pic[0], pic[1], pic[2], pic[3]);
             gl::Uniform2f(p.u_light, self.light[0], self.light[1]);
+            if self.lcd != LcdEffect::Off {
+                let [x, y] = self.lcd_params.shadow_offset;
+                gl::Uniform2f(p.u_shadow, x, y);
+                for (at, v) in p.u_pt.iter().zip(self.lcd_params.uniforms()) {
+                    gl::Uniform4f(*at, v[0], v[1], v[2], v[3]);
+                }
+            }
             gl::Uniform3f(p.u_dm_fg, dots[0], dots[1], dots[2]);
             gl::Uniform3f(p.u_dm_bgc, bg[0], bg[1], bg[2]);
             gl::Uniform2f(p.u_dm_lum, luma(light), luma(dark));

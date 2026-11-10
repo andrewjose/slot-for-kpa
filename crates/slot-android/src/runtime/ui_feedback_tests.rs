@@ -617,3 +617,82 @@ fn an_lcd_effect_holds_games_at_integer() {
     assert_eq!(engine.setting_value(SCREEN_SIZE_KEY), Some(SCREEN_SIZE_VALUE + 2),
         "off again: the system's own size");
 }
+
+#[test]
+fn lcd_effect_menus_edit_the_shared_parameters() {
+    use crate::lcd_params::{LcdPage, LcdSettings};
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    let key = |engine: &mut Engine, code: i32| {
+        engine.handle(Input::Key(code, true));
+        engine.handle(Input::Key(code, false));
+    };
+    let draws = |engine: &Engine| {
+        let mut out = Vec::new();
+        engine.draw_overlay(&mut out);
+        out.len()
+    };
+    // Settings > Systems > Game Boy Color, on its LCD Effect row.
+    let platform = Platform::Gbc;
+    let row = Engine::system_page_keys(platform).iter().position(|k| *k == 67).unwrap();
+    engine.overlay = ShelfOverlay::ScreenSystemSettings { platform, row };
+    assert!(draws(&engine) > 0);
+    key(&mut engine, 22);
+    assert_eq!(engine.settings.lcd_effect_gbc, crate::settings::LcdEffect::Transparency,
+        "Left/Right still pick the effect");
+    key(&mut engine, 96);
+    let from = LcdFrom::Systems { platform, row };
+    assert_eq!(engine.overlay, ShelfOverlay::LcdEffect { from, page: None, row: 0 });
+    assert_eq!(engine.settings.lcd_effect_gbc, crate::settings::LcdEffect::Transparency,
+        "A opens, it does not switch");
+    assert!(draws(&engine) > 0);
+
+    // TRANSPARENCY, second row: 0.20 -> 0.21.
+    key(&mut engine, 96);
+    let page = Some(LcdPage::Transparency);
+    assert_eq!(engine.overlay, ShelfOverlay::LcdEffect { from, page, row: 0 });
+    key(&mut engine, 20);
+    key(&mut engine, 22);
+    assert_eq!(engine.settings.lcd_params.transparency, 21);
+    assert!(engine.lcd_dirty_since.is_some(), "written once the edits settle");
+    let shown = quick_value_face("0.21", true);
+    assert_eq!(engine.lcd_value_faces[1].1, shown.w, "the value face is redrawn");
+    assert!(draws(&engine) > 0);
+    // Held Right repeats on a parameter page.
+    engine.handle(Input::Key(22, true));
+    assert!(engine.menu_held.is_some_and(|(code, _, _)| code == 22));
+    engine.handle(Input::Key(22, false));
+    assert!(engine.menu_held.is_none());
+    // On the shelf, Y has nothing to preview.
+    engine.handle(Input::Key(100, true));
+    assert!(!engine.lcd_preview);
+
+    // Every page draws, with every one of its values.
+    for (index, page) in LcdPage::ALL.into_iter().enumerate() {
+        engine.overlay = ShelfOverlay::LcdEffect { from, page: Some(page), row: 0 };
+        engine.refresh_lcd_values();
+        assert!(draws(&engine) > page.fields().len(), "{page:?}");
+        assert_eq!(page.index(), index);
+    }
+    engine.overlay = ShelfOverlay::LcdEffect { from, page: Some(LcdPage::Transparency), row: 1 };
+
+    // B back to the list (on the page's own row), then to Systems.
+    key(&mut engine, 97);
+    assert_eq!(engine.overlay,
+        ShelfOverlay::LcdEffect { from, page: None, row: LcdPage::Transparency.index() });
+    engine.tick_lcd_params();
+    assert!(engine.lcd_dirty_since.is_none(), "leaving the page writes the edit");
+    key(&mut engine, 97);
+    assert_eq!(engine.overlay, ShelfOverlay::ScreenSystemSettings { platform, row });
+
+    // Reset to Defaults is the list's last row.
+    engine.open_lcd(from);
+    for _ in 0..LcdPage::ALL.len() { key(&mut engine, 20); }
+    key(&mut engine, 96);
+    assert_eq!(engine.settings.lcd_params, LcdSettings::default());
+    // START leaves every shelf menu.
+    key(&mut engine, 108);
+    assert_eq!(engine.overlay, ShelfOverlay::None);
+    // Every label is loaded with the menu's own text.
+    assert_eq!(engine.menu_textures.len(), MENU_TEXT.len() + lcd_texts().count());
+}
