@@ -16,7 +16,8 @@ use crate::sensors;
 const VIDEO_BYTES: usize = (GBA_W * GBA_H * 4) as usize;
 /// Largest frame a home console core hands over (SNES hi-res interlaced,
 /// PAL Mega Drive interlaced): 512x512 is ample.
-const NATIVE_MAX: u32 = 512;
+// PlayStation interlaced modes reach 640x512.
+const NATIVE_MAX: u32 = 1024;
 
 static LIVE: AtomicBool = AtomicBool::new(false);
 // Run-Ahead "second instance": one private prediction copy of the core,
@@ -1097,14 +1098,18 @@ impl RetroCore for LibretroCore {
 
     fn load(&mut self, rom: &Path) -> Result<(), CoreError> {
         self.unload();
-        self.rom = std::fs::read(rom)?;
+        // A disc core (PCSX ReARMed) opens its image by path: a CD is
+        // hundreds of MB, never read into memory here.
+        let mut system = SystemInfo::default();
+        unsafe { (self.api.get_system_info)(&mut system) };
+        self.rom = if system.need_fullpath { Vec::new() } else { std::fs::read(rom)? };
         self.rom_path = Some(
             CString::new(rom.as_os_str().as_encoded_bytes())
                 .map_err(|_| CoreError::Load("rom path contains a nul".into()))?,
         );
         let info = GameInfo {
             path: self.rom_path.as_ref().map_or(ptr::null(), |p| p.as_ptr()),
-            data: self.rom.as_ptr() as *const c_void,
+            data: if self.rom.is_empty() { ptr::null() } else { self.rom.as_ptr() as *const c_void },
             size: self.rom.len(),
             meta: ptr::null(),
         };

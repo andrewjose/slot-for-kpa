@@ -718,13 +718,24 @@ impl GameSession {
                 core.set_option("genesis_plus_gx_lock_on", "disabled");
             }
             Core::Picodrive => {}
+            Core::PcsxRearmed => {
+                // A BIOS from the BIOS folder (scph*.bin) when there is one,
+                // else the core's own: no disc ever needs one to boot.
+                core.set_option("pcsx_rearmed_bios", "auto");
+                core.set_option("pcsx_rearmed_show_bios_bootlogo", "disabled");
+                // The PlayStation's own resolution: the picture is scaled
+                // by slot., and the frame stays within NATIVE_MAX.
+                core.set_option("pcsx_rearmed_neon_enhancement_enable", "disabled");
+            }
         }
         // rcheevos shares ONE evaluator, protected against cross-console
         // memory reads. GB=4 / GBA=5 / GBC=6 use their own libretro maps.
         // Speculative frames never reach it (including GB/GBC Run-Ahead).
         let console = match platform {
-            Platform::Gb => 4, Platform::Gba => 5, Platform::Gbc => 6,
-            Platform::Nes => 7, Platform::Snes => 3, Platform::Md => 1,
+            Platform::Gb => Some(4), Platform::Gba => Some(5), Platform::Gbc => Some(6),
+            Platform::Nes => Some(7), Platform::Snes => Some(3), Platform::Md => Some(1),
+            // rcheevos hashes a disc by reading its tracks: not wired up.
+            Platform::Psx => None,
         };
         // Second-instance Run-Ahead boots its copy from these, solo only.
         let runahead_secondary_spec = linked_boot.is_none().then(|| crate::runahead_secondary::Spec {
@@ -736,8 +747,8 @@ impl GameSession {
             primary_id: core.instance_id(),
             native_video: !platform.handheld(),
         });
-        let mut core: Box<dyn RetroCore> = match achievements {
-            Some(service) => service.wrap_for_console(Box::new(core), console),
+        let mut core: Box<dyn RetroCore> = match achievements.zip(console) {
+            Some((service, console)) => service.wrap_for_console(Box::new(core), console),
             None => Box::new(core),
         };
         // bsnes keeps its battery itself, named after the ROM file and
@@ -966,7 +977,7 @@ impl GameSession {
             gambatte_legacy_export, ring,
             rewind: RewindThread::spawn(REWIND_BYTES), rewind_frames: 0,
             frame_count: 0, palette_live, core_kind: which,
-            full_pad: matches!(platform, Platform::Snes | Platform::Md),
+            full_pad: matches!(platform, Platform::Snes | Platform::Md | Platform::Psx),
             second_player: !platform.handheld(), port2: 0, layouts: [None, None],
             blending: None, slot_blending: crate::frame_blend::Mode::Off,
             runahead_video: Vec::new(), runahead_size: (0, 0), runahead_state: Vec::new(),

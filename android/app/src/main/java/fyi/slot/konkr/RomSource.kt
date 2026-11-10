@@ -20,6 +20,9 @@ internal object RomSource {
     const val MIN_ROM_BYTES = 0x150
     private const val MAX_ENTRIES = 256
     private val supported = Systems.ROM_EXTENSIONS
+    /** What a ZIP may hold: a cartridge, never a disc image (those are
+     *  read where they are, and are far over MAX_ROM_BYTES). */
+    private val zippable = supported - Systems.DISC_EXT
 
     data class Header(val extension: String, val bytes: ByteArray)
 
@@ -39,7 +42,7 @@ internal object RomSource {
     fun archiveSaveFilename(zipFilename: String, embeddedExtension: String): String {
         require(isContainer(zipFilename)) { "Expected a cartridge ZIP" }
         val ext = embeddedExtension.lowercase(Locale.ROOT)
-        require(ext in supported) { "Unsupported embedded cartridge type" }
+        require(ext in zippable) { "Unsupported embedded cartridge type" }
         return "${zipFilename.substringBeforeLast('.')}.$ext"
     }
 
@@ -64,7 +67,7 @@ internal object RomSource {
                 val entry = zip.nextEntry ?: break
                 if (entry.isDirectory) continue
                 val romExt = extension(entry.name.substringAfterLast('/'))
-                if (romExt !in supported) continue
+                if (romExt !in zippable) continue
                 require(entry.size == -1L || entry.size in MIN_ROM_BYTES.toLong()..MAX_ROM_BYTES) {
                     "ZIP ROM exceeds safe size limits"
                 }

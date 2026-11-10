@@ -339,10 +339,10 @@ internal object RomLibrary {
      * convention most handheld setups follow). Their folders can hold
      * thousands of files, and listing them through SAF is most of a scan's
      * time. Our own systems' folders (gb, gbc, gba, sgb, nes, famicom, snes,
-     * sfc, snesna, megadrive, megadrivejp, genesis) and any folder with an
+     * sfc, snesna, megadrive, megadrivejp, genesis, psx) and any folder with an
      * unknown name are still searched, so custom layouts keep working.
      */
-    private val OTHER_SYSTEM_DIRECTORIES = setOf(
+    internal val OTHER_SYSTEM_DIRECTORIES = setOf(
         "3do", "adam", "ags", "amiga", "amiga1200", "amiga600", "amigacd32", "amstradcpc",
         "android", "apple2", "apple2gs", "arcade", "arcadia", "archimedes", "arduboy",
         "astrocde", "atari2600", "atari5200", "atari7800", "atari800", "atarijaguar",
@@ -358,7 +358,7 @@ internal object RomLibrary {
         "naomi2", "naomigd", "nds", "neogeo", "neogeocd", "neogeocdjp", "ngage", "ngp",
         "ngpc", "odyssey2", "openbor", "oric", "palm", "pc", "pc88", "pc98", "pcarcade",
         "pcengine", "pcenginecd", "pcfx", "pico8", "plus4", "pokemini", "ports", "ps2", "ps3",
-        "ps4", "psp", "psvita", "psx", "pv1000", "quake", "samcoupe", "saturn", "saturnjp",
+        "ps4", "psp", "psvita", "pv1000", "quake", "samcoupe", "saturn", "saturnjp",
         "scummvm", "scv", "sega32x", "sega32xjp", "sega32xna", "segacd", "sg-1000",
         "solarus", "spectravideo", "steam", "stv", "supergrafx", "supervision", "supracan",
         "switch", "symbian", "tanodragon", "tg16", "tg-cd", "ti99", "tic80", "to8", "trs-80",

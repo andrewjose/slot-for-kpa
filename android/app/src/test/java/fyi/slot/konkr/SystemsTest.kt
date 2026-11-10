@@ -28,6 +28,24 @@ class SystemsTest {
         assertEquals("FCEUmm", Systems.folderForKey("fceumm"))
     }
 
+    @Test fun playStationDiscsArePlayedInPlace() {
+        assertEquals("PSX", Systems.platformFor("chd"))
+        assertEquals("PSX", Systems.platformFor("PBP"))
+        assertEquals(null, Systems.platformFor("cue"))
+        assertTrue(Systems.isDisc("CHD") && Systems.isHome("chd"))
+        assertFalse(Systems.isDisc("bin"))
+        assertFalse("PSX" in Systems.HOME_PLATFORMS)
+        assertEquals("PCSX-ReARMed", Systems.coreFolder("", "chd"))
+        assertEquals("PCSX-ReARMed", Systems.coreFolder("snes9x", "pbp"))
+        assertEquals("pcsx_rearmed", Systems.keyForFolder("PCSX-ReARMed"))
+        assertTrue("chd" in Systems.ROM_EXTENSIONS)
+        assertEquals("ab12.chd", DiscSource.linkName("ab12", "CHD"))
+        assertEquals("/proc/self/fd/57", DiscSource.fdPath(57))
+        // ES-DE's psx folder is searched now that slot. plays it.
+        assertFalse("psx" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+        assertTrue("psp" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+    }
+
     @Test fun binNeedsASegaHeader() {
         val sega = ByteArray(0x200).also { "SEGA GENESIS    ".toByteArray().copyInto(it, 0x100) }
         assertTrue(Systems.acceptsHeader("bin", sega))
