@@ -204,8 +204,9 @@ class MainActivity : Activity() {
     private var pendingCartLabelUri: String? = null
     private lateinit var cartSounds: CartSounds
     private val scanner = Executors.newSingleThreadExecutor()
+    /** `key` is the ROM folders' layout (RomFolders.layoutKey). */
     private data class PendingLibraryIndex(
-        val root: Uri, val json: String, val prepared: String,
+        val key: String, val json: String, val prepared: String,
         val serial: Int, val quiet: Boolean
     )
     private var pendingLibraryIndex: PendingLibraryIndex? = null
@@ -703,7 +704,7 @@ class MainActivity : Activity() {
                 loadGameFromSaf(request)
             }
             when (nativePollUiAction()) {
-                1 -> openRomFolderPicker()
+                1 -> chooseRomFolder()
                 2 -> refreshLibrary()
                 3 -> {
                     try {
@@ -1187,17 +1188,15 @@ class MainActivity : Activity() {
                     Log.w(TAG, "BIOS folder access expired; choose it again")
                 }
             }
-        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(ROM_ROOT, null)
-        if (saved != null) {
-            val uri = Uri.parse(saved)
-            if (contentResolver.persistedUriPermissions.any {
-                    it.uri == uri && it.isReadPermission
-                }) {
-                if (restoreCachedLibrary(uri)) {
+        val roots = romRoots()
+        val key = RomFolders.layoutKey(roots)
+        if (key != null) {
+            if (roots.all { canReadFolder(it.uri) }) {
+                if (restoreCachedLibrary(key)) {
                     // Use the same fast cached boot as before; verify the SAF
                     // tree off-thread behind the splash with no UI delay.
-                    scanFolder(uri, quiet = true)
-                } else scanFolder(uri)
+                    scanLibrary(roots, quiet = true)
+                } else scanLibrary(roots)
             } else {
                 nativeSetShelfStatus(shelfPermissionExpired)
             }
@@ -2589,19 +2588,110 @@ class MainActivity : Activity() {
     }
 
     private fun refreshLibrary() {
-        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(ROM_ROOT, null)
-        if (saved == null) {
+        val roots = romRoots()
+        if (roots.isEmpty()) {
             SlotToast.makeText(this, "Choose your ROM folder first.", Toast.LENGTH_SHORT).show()
             openRomFolderPicker()
             return
         }
-        val uri = Uri.parse(saved)
-        if (contentResolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) {
-            SlotToast.makeText(this, "ROM folder access expired. Choose it again.", Toast.LENGTH_SHORT).show()
+        roots.firstOrNull { !canReadFolder(it.uri) }?.let { root ->
+            val which = root.system?.let { "${it.label} ROM folder" } ?: "ROM folder"
+            SlotToast.makeText(this, "$which access expired. Choose it again.", Toast.LENGTH_SHORT).show()
+            openRomFolderPicker(root.system)
+            return
+        }
+        scanLibrary(roots)
+    }
+
+    /** Every ROM folder: each system's own, then All Systems. */
+    private fun romRoots(): List<RomFolders.Root> {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val own = RomFolders.System.entries.mapNotNull { system ->
+            prefs.getString(RomFolders.key(system), null)?.let { system to it }
+        }.toMap()
+        return RomFolders.roots(prefs.getString(ROM_ROOT, null), own)
+    }
+
+    private fun canReadFolder(uri: String): Boolean {
+        val tree = Uri.parse(uri)
+        return contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
+    }
+
+    /** A chosen ROM folder's short name. */
+    private fun romFolderName(uri: String?): String? = uri?.let {
+        try {
+            RomFolders.shortName(DocumentsContract.getTreeDocumentId(Uri.parse(it)))
+        } catch (error: IllegalArgumentException) {
+            null
+        }
+    }
+
+    /** Library > Choose ROM Folder: one folder for every system, or a
+     *  folder of one system's own. The first time, straight to the picker. */
+    private fun chooseRomFolder() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val all = prefs.getString(ROM_ROOT, null)
+        val own = RomFolders.System.entries.filter { prefs.getString(RomFolders.key(it), null) != null }
+        if (all == null && own.isEmpty()) {
             openRomFolderPicker()
             return
         }
-        scanFolder(uri)
+        val summary = "All systems: " + (romFolderName(all) ?: "not set") +
+            "\nOwn folder: " + own.joinToString(", ") { it.short }.ifEmpty { "none" }
+        val dialog = SlotModalDialog(this, "ROM FOLDER", summary)
+        dialog.addButton("ALL SYSTEMS") {
+            dialog.dismiss()
+            openRomFolderPicker()
+        }
+        dialog.addButton("ONE SYSTEM") {
+            dialog.dismiss()
+            chooseRomSystem()
+        }
+        dialog.show()
+    }
+
+    /** Which system gets a ROM folder of its own. */
+    private fun chooseRomSystem() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val dialog = SlotModalDialog(this, "CHOOSE A SYSTEM",
+            "Its folder replaces the All Systems folder for its games.")
+        for (system in RomFolders.System.entries) {
+            dialog.addButton(system.label) {
+                dialog.dismiss()
+                val current = prefs.getString(RomFolders.key(system), null)
+                if (current == null) openRomFolderPicker(system)
+                else chooseRomSystemFolder(system, current)
+            }
+        }
+        dialog.show()
+    }
+
+    /** A system that already has its own ROM folder: choose another one,
+     *  or go back to the All Systems folder. */
+    private fun chooseRomSystemFolder(system: RomFolders.System, current: String) {
+        val dialog = SlotModalDialog(this, "${system.short} ROM FOLDER",
+            "Now: " + (romFolderName(current) ?: "unavailable"))
+        dialog.addButton("CHOOSE ANOTHER FOLDER") {
+            dialog.dismiss()
+            openRomFolderPicker(system)
+        }
+        dialog.addButton("USE ALL SYSTEMS FOLDER") {
+            dialog.dismiss()
+            val saved = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .remove(RomFolders.key(system)).commit()
+            SlotToast.makeText(this,
+                if (saved) "${system.label} games now come from the All Systems folder."
+                else "Couldn't save this setting.",
+                Toast.LENGTH_LONG).show()
+            if (saved) rescanRomFolders()
+        }
+        dialog.show()
+    }
+
+    /** After the ROM folders change: the new library, or the first-run shelf. */
+    private fun rescanRomFolders() {
+        val roots = romRoots()
+        if (roots.isEmpty()) nativeSetShelfStatus(shelfNone) else scanLibrary(roots)
     }
 
     /** A chosen folder's short name, or null when it isn't a folder tree. */
@@ -2761,7 +2851,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openRomFolderPicker() {
+    /** The All Systems ROM folder, or `system`'s own. */
+    private fun openRomFolderPicker(system: RomFolders.System? = null) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -2770,7 +2861,7 @@ class MainActivity : Activity() {
         }
         try {
             @Suppress("DEPRECATION")
-            startActivityForResult(intent, FOLDER_REQUEST)
+            startActivityForResult(intent, system?.let(RomFolders::requestCode) ?: FOLDER_REQUEST)
         } catch (error: ActivityNotFoundException) {
             nativeSetShelfStatus(shelfPickerError)
             Log.w(TAG, "Android folder picker unavailable", error)
@@ -3121,8 +3212,9 @@ class MainActivity : Activity() {
             return
         }
         val folderRequest = SaveFolders.request(requestCode)
-        if ((requestCode !in setOf(FOLDER_REQUEST, BIOS_REQUEST) && folderRequest == null) ||
-            resultCode != RESULT_OK) return
+        val romSystem = RomFolders.request(requestCode)
+        if ((requestCode !in setOf(FOLDER_REQUEST, BIOS_REQUEST) && folderRequest == null &&
+                romSystem == null) || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
             val writable = folderRequest != null
@@ -3132,11 +3224,19 @@ class MainActivity : Activity() {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
             contentResolver.takePersistableUriPermission(uri, flags)
+            if (romSystem != null) {
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putString(RomFolders.key(romSystem), uri.toString()).apply()
+                SlotToast.makeText(this, "${romSystem.label} games now come from this folder.",
+                    Toast.LENGTH_LONG).show()
+                rescanRomFolders()
+                return
+            }
             when (requestCode) {
                 FOLDER_REQUEST -> {
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString(ROM_ROOT, uri.toString()).apply()
-                    scanFolder(uri)
+                    rescanRomFolders()
                 }
                 BIOS_REQUEST -> importBiosFolder(uri, persistSelection = true)
                 else -> folderRequest?.let { request ->
@@ -3155,7 +3255,7 @@ class MainActivity : Activity() {
                 }
             }
         } catch (error: SecurityException) {
-            if (requestCode == FOLDER_REQUEST) {
+            if (requestCode == FOLDER_REQUEST || romSystem != null) {
                 nativeSetShelfStatus(shelfPermissionError)
             } else {
                 SlotToast.makeText(this, "Couldn't access this folder. Select it again.", Toast.LENGTH_LONG).show()
@@ -3256,14 +3356,14 @@ class MainActivity : Activity() {
         emptyList()
     }
 
-    /** Read only a cache that belongs to this persisted SAF tree. */
-    private fun cachedLibraryGames(root: Uri): String? {
+    /** Read only a cache that belongs to these ROM folders (layout key). */
+    private fun cachedLibraryGames(key: String): String? {
         val file = File(filesDir, ROM_CACHE_NAME)
         if (!file.isFile || file.length() !in 1L..ROM_CACHE_MAX_BYTES.toLong()) return null
         return try {
             val metadata = JSONObject(file.readText(Charsets.UTF_8))
             if (metadata.optInt("schema") != ROM_CACHE_SCHEMA ||
-                metadata.optString("root") != root.toString()) null
+                metadata.optString("root") != key) null
             else metadata.optJSONArray("games")?.toString()
         } catch (error: Exception) {
             Log.w(TAG, "Invalid ROM cache; scanning without replacing it first", error)
@@ -3272,8 +3372,8 @@ class MainActivity : Activity() {
     }
 
     /** Reuse cached labels immediately without rescanning on the UI thread. */
-    private fun restoreCachedLibrary(root: Uri): Boolean {
-        val games = cachedLibraryGames(root) ?: return false
+    private fun restoreCachedLibrary(key: String): Boolean {
+        val games = cachedLibraryGames(key) ?: return false
         return try {
             val count = setStudioOverrides(games)
             if (count < 0) return false
@@ -3287,10 +3387,10 @@ class MainActivity : Activity() {
     }
 
     /** AtomicFile retains the previous library if the write fails. */
-    private fun storeCachedLibrary(root: Uri, json: String) {
+    private fun storeCachedLibrary(key: String, json: String) {
         val payload = JSONObject()
             .put("schema", ROM_CACHE_SCHEMA)
-            .put("root", root.toString())
+            .put("root", key)
             .put("games", JSONArray(json))
             .toString().toByteArray(Charsets.UTF_8)
         if (payload.size > ROM_CACHE_MAX_BYTES) {
@@ -3320,8 +3420,7 @@ class MainActivity : Activity() {
             return
         }
         if (!resumed || !nativeCanRefreshLibrary()) return
-        val saved = getSharedPreferences(PREFS, MODE_PRIVATE).getString(ROM_ROOT, null)
-        if (saved != next.root.toString()) {
+        if (RomFolders.layoutKey(romRoots()) != next.key) {
             pendingLibraryIndex = null
             libraryRefreshIndicator.hide()
             return
@@ -3343,7 +3442,7 @@ class MainActivity : Activity() {
         scanner.execute {
             if (scanSerial.get() != next.serial) return@execute
             try {
-                storeCachedLibrary(next.root, next.json)
+                storeCachedLibrary(next.key, next.json)
                 startRaSmartCache()
                 startAutoCartLabels()
             } catch (error: Exception) {
@@ -3363,7 +3462,9 @@ class MainActivity : Activity() {
         }, 700L)
     }
 
-    private fun scanFolder(uri: Uri, quiet: Boolean = false) {
+    /** Scans every ROM folder (romRoots) into one library. */
+    private fun scanLibrary(roots: List<RomFolders.Root>, quiet: Boolean = false) {
+        val key = RomFolders.layoutKey(roots) ?: return
         val serial = scanSerial.incrementAndGet()
         pendingLibraryIndex = null
         if (::libraryRefreshIndicator.isInitialized) libraryRefreshIndicator.hide()
@@ -3387,8 +3488,8 @@ class MainActivity : Activity() {
         }
         scanner.execute {
             try {
-                val previous = cachedLibraryGames(uri)
-                val result = RomLibrary.scan(this, uri, previous, progress)
+                val previous = cachedLibraryGames(key)
+                val result = scanRoots(roots, previous, progress)
                 if (scanSerial.get() != serial) return@execute
                 // A bounded/incomplete SAF scan is not evidence that a ROM
                 // was removed. Fail closed, retaining the previous shelf.
@@ -3424,7 +3525,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed || scanSerial.get() != serial) return@runOnUiThread
                     pendingLibraryIndex = PendingLibraryIndex(
-                        uri, result.json, prepared, serial, quiet)
+                        key, result.json, prepared, serial, quiet)
                     publishPendingLibraryIfIdle()
                 }
             } catch (error: Exception) {
@@ -3437,6 +3538,35 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** Each folder's games, kept by RomFolders.shelve, as one library.
+     *  The All Systems folder alone scans exactly as before. Progress
+     *  counts on across the folders. */
+    private fun scanRoots(roots: List<RomFolders.Root>, previous: String?,
+                          progress: ((Int, Int) -> Unit)?): RomLibrary.ScanResult {
+        if (roots.size == 1 && roots[0].system == null) {
+            return RomLibrary.scan(this, Uri.parse(roots[0].uri), previous, progress)
+        }
+        val own = roots.mapNotNull { it.system }.toSet()
+        val parts = ArrayList<String>()
+        var truncated = false
+        var before = 0
+        for (root in roots) {
+            val offset = before
+            val part = RomLibrary.scan(this, Uri.parse(root.uri), previous,
+                progress?.let { report -> { done: Int, total: Int ->
+                    report(offset + done, if (total == 0) 0 else offset + total)
+                } }) { platform, colorOnly -> RomFolders.shelve(root, platform, colorOnly, own) }
+            truncated = truncated || part.truncated
+            parts.add(part.json)
+            before += part.count
+        }
+        val json = RomFolders.merge(parts)
+        val count = JSONArray(json).length()
+        // The library's bound (RomLibrary.indexEntries) holds across folders.
+        if (count > RomLibrary.MAX_ROMS) return RomLibrary.ScanResult("[]", 0, truncated = true)
+        return RomLibrary.ScanResult(json, count, truncated)
     }
 
     override fun onDestroy() {

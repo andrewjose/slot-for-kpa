@@ -15,7 +15,7 @@ import java.util.Locale
  * No commercial games, BIOS files, or writable access are requested or copied.
  */
 internal object RomLibrary {
-    private const val MAX_ROMS = 5000
+    internal const val MAX_ROMS = 5000
     /** Files listed before reading: room for ZIPs and .bins that are not carts. */
     private const val MAX_CANDIDATES = MAX_ROMS * 2
     private const val MAX_DIRECTORIES = 1500
@@ -71,9 +71,13 @@ internal object RomLibrary {
      *
      * Two passes: the folders are listed first (progress reports the carts
      * found, total 0), then each cart is read (progress reports done/total).
+     *
+     * `shelve` (RomFolders.shelve) gives the system each game is shelved as
+     * in this folder, or null to leave it to another folder.
      */
     fun scan(context: Context, treeUri: Uri, oldGamesJson: String? = null,
-             progress: ((done: Int, total: Int) -> Unit)? = null): ScanResult {
+             progress: ((done: Int, total: Int) -> Unit)? = null,
+             shelve: ((platform: String, colorOnly: Boolean) -> String?)? = null): ScanResult {
         val previous = HashMap<String, JSONObject>()
         val cachedJson = oldGamesJson ?: try {
             val cache = java.io.File(context.filesDir, "rom-library-cache-v1.json")
@@ -275,6 +279,7 @@ internal object RomLibrary {
                     else -> "GB"
                 }
             }
+            if (shelve != null) platform = shelve(platform, colorOnly) ?: continue
             val game = JSONObject()
                 .put("title", title)
                 .put("filename", name)
