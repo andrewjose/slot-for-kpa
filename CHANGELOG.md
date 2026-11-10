@@ -2,6 +2,10 @@
 
 This changelog covers the public releases of slot. for Android, an Android port born on the KONKR Pocket Advance (formerly slot. for KONKR Pocket Advance). Earlier development experiments are preserved in Git history.
 
+## Unreleased
+
+- Save and save state folders per system: Library → Choose Save Folder / Choose Save State Folder offer All Systems or One System (GBA, GBC, GB, NES, Super Nintendo, Mega Drive). A system's own folder replaces the All Systems one for its games; existing choices are kept as All Systems. A system's folder receives only that system's saves or states when chosen (by core, or by the library game for mGBA and Gambatte); the All Systems folder the rest.
+
 ## v2.2.1 — 10 November 2026
 
 - Simpletex on the GBA without its own GBA Color: Color Correction (mGBA/gpSP core option) works with it; players who used it get Color Correction ON once. "Grid V2 + GBA" unchanged. Simpletex GB/GBC/GBA share one GLSL function with Russ's settings and 2.2.0's grid.
