@@ -2,6 +2,11 @@
 
 This changelog covers the public releases of slot. for Android, an Android port born on the KONKR Pocket Advance (formerly slot. for KONKR Pocket Advance). Earlier development experiments are preserved in Git history.
 
+## Unreleased
+
+- LCD Effect parameters: A on Systems → LCD Effect (or the in-game Screen row) opens Transparency, Color, Shadows, Sunlight Shimmer and Glare & Texture pages with the shader's own parameters, in its units and ranges, plus Reset to Defaults; shared by GB, GBC and GBA; Y in game previews. The defaults are the values the effect had (the shader takes them as uniforms; renders unchanged).
+- An LCD Effect holds the game at Integer: launching with it on, or turning it on, switches to Integer with "Screen: Integer (LCD)"; other sizes are refused with the same banner, and the chosen size comes back when it's off.
+
 ## v2.2.1 — 10 November 2026
 
 - Simpletex on the GBA without its own GBA Color: Color Correction (mGBA/gpSP core option) works with it; players who used it get Color Correction ON once. "Grid V2 + GBA" unchanged. Simpletex GB/GBC/GBA share one GLSL function with Russ's settings and 2.2.0's grid.
