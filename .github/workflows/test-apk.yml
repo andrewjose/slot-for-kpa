@@ -15,7 +15,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # contents: write publishes each APK as a prerelease (below).
+  contents: write
 
 jobs:
   debug-apk:
@@ -135,3 +136,22 @@ jobs:
           name: slot-test-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      # Artifacts download only through Azure blob storage; a release asset
+      # downloads from GitHub, so test builds can be fetched outside Actions.
+      - name: Publish the APK as a test prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          BADGING="$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | head -1)"
+          NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING")"
+          CODE="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$BADGING")"
+          test -n "$NAME" && test -n "$CODE"
+          TAG="test-v${NAME}-${CODE}-run${GITHUB_RUN_NUMBER}"
+          FILE="slot-${NAME}-${CODE}-test-run${GITHUB_RUN_NUMBER}.apk"
+          cp "$APK" "$FILE"
+          gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" \
+            --title "Test build ${NAME} (${CODE}), run ${GITHUB_RUN_NUMBER}" \
+            --notes "Debug test build (fyi.slot.konkr.diag) of build/test-apk at ${GITHUB_SHA}. Not a release."
+          echo "Published $TAG: $FILE"
