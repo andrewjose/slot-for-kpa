@@ -9,6 +9,7 @@ mod headless;
 #[cfg(feature = "host")]
 mod host;
 mod lcd3x;
+mod lcd_params;
 mod pipeline;
 mod power;
 mod quad;
@@ -25,6 +26,7 @@ pub use headless::HeadlessSurface;
 #[cfg(feature = "host")]
 pub use host::HostSurface;
 pub use lcd3x::{lcd3x_factors, lcd3x_mask, LcdEffect, ScreenEffect};
+pub use lcd_params::LcdParams;
 pub use pipeline::{fit_window, Fit, SCALE, SRC_H, SRC_W, WHOLE_TEXTURE, default_area};
 pub use power::{screen_brightness, screen_scale, screen_width};
 pub use surface::{blit_rect, blit_rect_fit, fit_rect, fit_scale, GfxError, Surface, OUT_H, out_w, canvas_w_for, set_canvas_for_panel, BASE_W};
