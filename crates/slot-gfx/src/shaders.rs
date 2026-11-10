@@ -471,11 +471,28 @@ vec3 grid_line(vec2 uv, vec3 c) {
    (Soft grid placement, author defaults), adapted with his permission.
    Every cache pass of the original (shadow, film noise, light field) is
    computed in place: same maths, one pass. LCD_FX: 0 off, 1 Pixel
-   Transparency, 2 Sunlight Shimmer, fixed when the program is built. */
+   Transparency, 2 Sunlight Shimmer, fixed when the program is built.
+   The parameters (slot_gfx::LcdParams, in the shader's own units):
+   u_pt0 pixel mode (0 white, 1 bright, 2 all), amount, white threshold,
+         white boost (0 off)
+   u_pt1 natural brightness (0/1), backing brightness, backing tint
+         (0 off, 1 Warm 1, 2 Warm 2, 3 Neutral, 4 Aluminum), tint intensity
+   u_pt2 polarizer (0 off), saturation, pixel brightness, full texture (0/1)
+   u_pt3 shadows (0/1), edge shadow (0/1), shadow opacity, shadow blur
+   u_pt4 rainbow intensity, band density, film splotchiness, splotch size
+   u_pt5 glare strength, glare spread, colour shift, unused             */
 uniform vec2 u_light;      // light position (0..1 over the picture)
 uniform vec2 u_shadow;     // shadow offset in reference pixels (3,3)
+uniform vec4 u_pt0;
+uniform vec4 u_pt1;
+uniform vec4 u_pt2;
+uniform vec4 u_pt3;
+uniform vec4 u_pt4;
+uniform vec4 u_pt5;
 
 float pt_luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+// Brightness mode: Natural (BT.709) or Simple (the RGB average).
+float pt_bright(vec3 c) { return u_pt1.x > 0.5 ? pt_luma(c) : (c.r + c.g + c.b) / 3.0; }
 float pt_hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
@@ -483,12 +500,13 @@ float pt_hash(vec2 p) {
 }
 float pt_paper(vec2 uv) {
     vec2 p = uv * 0.25 * 512.0;
+    if (u_pt2.w < 0.5) return (pt_hash(p) * 0.5 + pt_hash(p * 2.0) * 0.25) * (7.0 / 6.0);
     return pt_hash(p) * 0.5 + pt_hash(p * 2.0) * 0.25 + pt_hash(p * 4.0) * 0.125;
 }
 float pt_caster(vec2 cell) {
     if (any(lessThan(cell, floor(u_pic.xy * u_src + 0.5)))
         || any(greaterThanEqual(cell, floor(u_pic.zw * u_src + 0.5))))
-        return 1.0; // screen edge shadow
+        return u_pt3.y; // screen edge shadow
     return 1.0 - pt_luma(texture2D(u_game, (cell + 0.5) / u_src).rgb);
 }
 float pt_shadow(vec2 native, vec2 r) {
@@ -511,7 +529,7 @@ float sun_smooth(vec2 p) {
                mix(pt_hash(i + vec2(0.0, 1.0)), pt_hash(i + vec2(1.0, 1.0)), f.x), f.y);
 }
 float sun_film(vec2 uv) {
-    vec2 p = uv * 0.6 * 8.0;
+    vec2 p = uv * u_pt4.w * 8.0;
     return sun_smooth(p) * 0.5 + sun_smooth(p * 2.0) * 0.25 + sun_smooth(p * 4.0) * 0.125;
 }
 vec3 sun_qwp(float g) {
@@ -525,50 +543,77 @@ vec3 sun_qwp(float g) {
     k = cos(0.019138570 * g); t += vec3(0.648322, 0.114430, 0.0) * k * k;
     return t / max(max(t.r, max(t.g, t.b)), 0.001);
 }
+// The backing tints, brightness matched to Warm 1's brightest channel.
+vec3 pt_palette(float which) {
+    vec3 pal = which < 1.5 ? vec3(0.651, 0.675, 0.518)
+        : which < 2.5 ? vec3(0.72, 0.73, 0.66)
+        : which < 3.5 ? vec3(0.766, 0.73, 0.763)
+        : vec3(0.76);
+    return pal * (0.675 / max(pal.r, max(pal.g, pal.b)));
+}
 vec3 lcd_effect(vec3 lcd, vec2 uv) {
 #if LCD_FX > 0
     vec2 out_px = u_rect.zw * u_fbo;          // picture size on screen
     vec2 texel = 1.0 / out_px;
     float scale = sqrt(out_px.x / 640.0 * out_px.y / 480.0);
     vec3 orig = texture2D(u_game, uv).rgb;
-    float bright = pt_luma(orig);
-    float alpha = clamp(0.20 * bright * 2.665, 0.0, 1.0);   // Bright mode, 0.20
-    vec3 bg = vec3(0.48) + (pt_paper(v_uv) - 0.4375) * 0.065;
-    // Drop shadow, 3 px at 640x480, blur 2, opacity 0.5, 9 taps.
-    vec2 off = -u_shadow * scale * texel;
-    vec2 native = (v_uv + off) * u_uv.zw * u_src + u_uv.xy * u_src;
-    vec2 radius = 2.0 * scale * texel * u_uv.zw * u_src;
-    float s = pt_shadow(native, radius) * 0.5;
-    float dz = (1.0 - 0.90) * 0.5;
-    s = smoothstep(0.0, dz, s) * s;
-    bg = mix(bg, bg * 0.2, s);
-    // Neutral backing tint (palette 3), intensity 1.
-    vec3 pal = vec3(0.766, 0.73, 0.763);
-    pal *= 0.675 / max(pal.r, max(pal.g, pal.b));
-    bg = clamp(pal + mix(vec3(-1.0), vec3(1.0), bg), 0.0, 1.0);
+    float luma = pt_luma(orig);
+    float bright = pt_bright(orig);
+    // Pixel brightness below 0 dims the LCD before compositing.
+    if (u_pt2.z < -0.001) lcd *= max(1.0 + u_pt2.z * pt_luma(lcd), 0.0);
+    bool white = luma > u_pt0.z && min(min(orig.r, orig.g), orig.b) > u_pt0.z * 0.9;
+    float alpha;
+    if (u_pt0.x > 0.5 && u_pt0.x < 1.5) {
+        alpha = u_pt0.y * bright * 2.665;                // Bright pixels
+    } else {
+        alpha = (u_pt0.x < 0.5 && !white) ? 0.0 : bright / 3.0 + u_pt0.y;  // white / all
+    }
+    if (white && u_pt0.w > 0.0) alpha = max(alpha, u_pt0.w);
+    alpha = clamp(alpha, 0.0, 1.0);
+    vec3 bg = vec3(u_pt1.y) + (pt_paper(v_uv) - 0.4375) * 0.065;
+    // Drop shadow, offset at 640x480, 9 taps.
+    if (u_pt3.x > 0.5 && u_pt3.z > 0.0) {
+        vec2 off = -u_shadow * scale * texel;
+        vec2 native = (v_uv + off) * u_uv.zw * u_src + u_uv.xy * u_src;
+        float blur = u_pt3.w > 0.1 ? u_pt3.w : 0.0;
+        vec2 radius = blur * scale * texel * u_uv.zw * u_src;
+        float s = pt_shadow(native, radius) * u_pt3.z;
+        float dz = (1.0 - u_pt0.z) * u_pt3.z;
+        if (dz > 0.001) s = smoothstep(0.0, dz, s) * s;
+        bg = mix(bg, bg * 0.2, s);
+    }
+    if (u_pt1.z > 0.5) {
+        vec3 tinted = clamp(pt_palette(u_pt1.z) + mix(vec3(-1.0), vec3(1.0), bg), 0.0, 1.0);
+        bg = mix(bg, tinted, u_pt1.w);
+    }
     vec3 c = mix(lcd, bg, alpha);
 #if LCD_FX > 1
     // Sunlight Shimmer: rainbow through the pixels, then glare on top.
     float aspect = out_px.x / out_px.y;
     vec2 to_light = (v_uv - u_light) * vec2(aspect, 1.0);
-    float ang = clamp(length(to_light) * 1.8, 0.0, 1.4);
-    float sr = sin(ang) / 1.5;
-    float g = 275.0 * sqrt(1.0 - sr * sr);
-    g *= 1.0 + (sun_film(vec2(v_uv.x * aspect, v_uv.y)) - 0.4375) * 0.5;
-    vec3 tint = sun_qwp(g) * orig * orig;
-    float strength = 0.15 * mix(0.03, 1.0, bright);
-    if (any(notEqual(c, vec3(0.0)))) {
-        vec3 tinted = c * mix(vec3(1.0), tint, strength);
-        float tl = pt_luma(tinted);
-        if (tl > 0.001) tinted *= pt_luma(c) / tl;
-        c = tinted;
+    if (u_pt4.x > 0.001) {
+        float ang = clamp(length(to_light) * u_pt4.y, 0.0, 1.4);
+        float sr = sin(ang) / 1.5;
+        float g = 275.0 * u_pt5.z * sqrt(1.0 - sr * sr);
+        g *= 1.0 + (sun_film(vec2(v_uv.x * aspect, v_uv.y)) - 0.4375) * u_pt4.z;
+        vec3 tint = sun_qwp(g) * orig * orig;
+        float strength = u_pt4.x * mix(0.03, 1.0, luma);
+        if (any(notEqual(c, vec3(0.0)))) {
+            vec3 tinted = c * mix(vec3(1.0), tint, strength);
+            float tl = pt_luma(tinted);
+            if (tl > 0.001) tinted *= pt_luma(c) / tl;
+            c = tinted;
+        }
     }
 #endif
-    c *= mix(vec3(1.0), vec3(0.94, 1.0, 0.865), 1.0);          // polarizer
-    c = clamp(c * (1.0 + 0.05 * pt_luma(c)), 0.0, 1.0);       // highlights
+    if (u_pt2.x > 0.001) c *= mix(vec3(1.0), vec3(0.94, 1.0, 0.865), u_pt2.x);  // polarizer
+    if (u_pt2.z > 0.001) c = clamp(c * (1.0 + u_pt2.z * pt_luma(c)), 0.0, 1.0); // highlights
+    if (abs(u_pt2.y - 1.0) > 0.001) c = clamp(mix(vec3(pt_luma(c)), c, u_pt2.y), 0.0, 1.0);
 #if LCD_FX > 1
-    float glare = exp(-dot(to_light, to_light) / (2.0 * 0.25 * 0.25)) * 0.15;
-    c = mix(c, vec3(1.0), clamp(glare, 0.0, 0.85));
+    if (u_pt5.x > 0.001) {
+        float glare = exp(-dot(to_light, to_light) / (2.0 * (u_pt5.y * u_pt5.y))) * u_pt5.x;
+        c = mix(c, vec3(1.0), clamp(glare, 0.0, 0.85));
+    }
 #endif
     c += (pt_hash(floor(v_uv * out_px) + 0.5) - 0.5) / 255.0;  // dither
     return c;

@@ -47,6 +47,8 @@ pub enum Toast {
     ScreenInteger,
     ScreenRatio,
     ScreenStretch,
+    /// An LCD Effect keeps the game at Integer.
+    ScreenIntegerLcd,
     Palette(GbPalette),
     /// Boktai's sun from L3 / R3, 0..=10.
     Sun(u8),
@@ -63,7 +65,7 @@ const SUN_TEXT: [&str; 11] = [
 ];
 
 impl Toast {
-    const FIXED: [Toast; 43] = [
+    const FIXED: [Toast; 44] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::NeedsGpsp,
@@ -102,6 +104,7 @@ impl Toast {
         Toast::ScreenInteger,
         Toast::ScreenRatio,
         Toast::ScreenStretch,
+        Toast::ScreenIntegerLcd,
         Toast::SunSensor,
         Toast::SunAuto,
         Toast::RunAheadOff,
@@ -166,6 +169,7 @@ impl Toast {
             Toast::ScreenInteger => "Screen: Integer",
             Toast::ScreenRatio => "Screen: Original Ratio",
             Toast::ScreenStretch => "Screen: Stretch",
+            Toast::ScreenIntegerLcd => "Screen: Integer (LCD)",
             Toast::Palette(p) => p.label(),
             Toast::Sun(level) => SUN_TEXT[usize::from(level.min(10))],
             Toast::SunSensor => "Sun: Sensor",
