@@ -6,16 +6,30 @@ import android.provider.DocumentsContract
 import java.io.File
 
 /**
- * Safely stages user-owned BIOS into mGBA's private libretro system directory.
+ * Safely stages user-owned BIOS into the cores' private libretro system directory.
  * The selected SAF tree is read-only; only known original Slot BIOS names
  * are considered. Called from the same single-thread executor as ROM staging.
  */
 internal object BiosLibrary {
-    private val lengths = mapOf(
-        "gba_bios.bin" to 16_384,
-        "gbc_bios.bin" to 2_304,
-        "gb_bios.bin" to 256
-    )
+    private const val PS1_BIOS = 524_288
+    private const val SYSTEM_CARD = 262_144
+
+    /** Each known BIOS and the sizes a good dump has. */
+    private val lengths: Map<String, Set<Int>> = mapOf(
+        "gba_bios.bin" to setOf(16_384),
+        "gbc_bios.bin" to setOf(2_304),
+        "gb_bios.bin" to setOf(256)
+    ) +
+        // PlayStation (PCSX ReARMed finds these by name; optional, it has
+        // its own BIOS otherwise).
+        listOf("scph5500.bin", "scph5501.bin", "scph5502.bin", "scph1001.bin",
+            "scph7001.bin", "scph7502.bin", "scph101.bin", "scph1000.bin",
+            "scph3000.bin", "scph3500.bin", "psxonpsp660.bin")
+            .associateWith { setOf(PS1_BIOS) } +
+        // TurboGrafx-CD System Cards (Beetle PCE Fast needs syscard3.pce),
+        // with or without a 512-byte copier header.
+        listOf("syscard3.pce", "syscard2.pce", "syscard1.pce", "gexpress.pce")
+            .associateWith { setOf(SYSTEM_CARD, SYSTEM_CARD + 512) }
 
     fun importFrom(context: Context, folder: Uri): List<String> {
         val resolver = context.contentResolver
@@ -38,7 +52,8 @@ internal object BiosLibrary {
                 if (cursor.getString(mimeCol) ==
                     DocumentsContract.Document.MIME_TYPE_DIR) continue
                 val name = cursor.getString(nameCol)?.lowercase() ?: continue
-                val expected = lengths[name] ?: continue
+                val sizes = lengths[name] ?: continue
+                val expected = sizes.max()
                 if (cursor.isNull(sizeCol).not() &&
                     cursor.getLong(sizeCol) > expected.toLong()) {
                     continue
@@ -59,7 +74,7 @@ internal object BiosLibrary {
                     }
                     data.copyOf(count)
                 } ?: continue
-                if (bytes.size != expected) continue
+                if (bytes.size !in sizes) continue
                 // Original Slot also recognizes the standard GBA BIOS prefix.
                 if (name == "gba_bios.bin" && bytes[0] != 0x18.toByte()) continue
                 found[name] = bytes
@@ -67,7 +82,8 @@ internal object BiosLibrary {
         } ?: error("Cannot read selected BIOS folder")
 
         require(found.isNotEmpty()) {
-            "No valid gba_bios.bin, gbc_bios.bin or gb_bios.bin found"
+            "No known BIOS found (gba_bios.bin, gb_bios.bin, gbc_bios.bin, " +
+                "a PlayStation scph*.bin or a TurboGrafx-CD syscard3.pce)"
         }
         val dest = File(context.filesDir, "BIOS").apply { mkdirs() }
         check(dest.isDirectory) { "BIOS destination unavailable" }
