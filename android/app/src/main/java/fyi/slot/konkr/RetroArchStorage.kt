@@ -1256,7 +1256,7 @@ internal object RetroArchStorage {
             if (old.contentEquals(bytes)) return
             if (isState) {
                 // Never overwrite unsupported or damaged RetroArch states,
-                // including zstd v2 and legacy raw files we cannot validate.
+                // including legacy raw files we cannot validate.
                 RetroArchCompression.requireSupportedContainer(old)
             }
             // Never destroy the pre-Slot save on first sync. A backup is
