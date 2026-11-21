@@ -720,3 +720,11 @@ fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
     assert_eq!(settings.shader_tgcd, crate::settings::Shader::ZfastCrt);
     assert_eq!(settings.shader_psx, crate::settings::Shader::Off, "its own shader");
 }
+
+#[test]
+fn game_errors_name_the_step_that_failed() {
+    assert!(game_error_text("rom: ROM exceeds 64 MiB").contains("game file"));
+    assert!(game_error_text("saves: Permission denied").contains("save folder"));
+    assert!(game_error_text("core: boom").contains("ROM and core"));
+    assert!(game_error_text("Shared save selection cancelled").contains("ROM and core"));
+}
