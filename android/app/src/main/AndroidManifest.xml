@@ -37,13 +37,25 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
+            android:launchMode="singleTask"
             android:screenOrientation="landscape">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Never changes the home app silently; user explicitly grants
-                 Home role via Apps -> Set as Home. -->
+        </activity>
+        <!-- slot. as the home app. Android keeps a home app in a task of its
+             own, so Home could open a second slot. whose core stays locked
+             (upstream #109): this one only brings back the slot. already
+             running. Never changes the home app silently; user explicitly
+             grants Home role via Apps -> Set as Home. -->
+        <activity
+            android:name=".SlotHomeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="fyi.slot.konkr.home"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />

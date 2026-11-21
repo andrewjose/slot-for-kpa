@@ -3635,6 +3635,13 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    /** singleTask (upstream #109): a second launch, or Home with slot. as the
+     *  home app, brings this instance back instead of opening a copy. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         if (returnFromSlotChild) {
