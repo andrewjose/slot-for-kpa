@@ -233,7 +233,12 @@ internal object RomLibrary {
                 headersReused++
                 code = old.optString("code")
                 colorOnly = old.optBoolean("color_only")
-                platform = old.optString("platform")
+                // A disc's shelf comes from its folder, not its header: an
+                // index from before the TurboGrafx-CD shelf filed every CHD
+                // as a PlayStation's.
+                platform = if (Systems.isDisc(embeddedExtension))
+                    Systems.platformFor(embeddedExtension, dir.tgcd)!!
+                else old.optString("platform")
                 gbTitle = old.optString("gb_title")
                 gbCode = old.optString("gb_code")
                 gbJapan = old.optBoolean("gb_japan")
