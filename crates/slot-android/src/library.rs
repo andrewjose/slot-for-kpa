@@ -6,7 +6,8 @@ use slot_store::gb::{Class, Header};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-const MAX_ROMS: usize = 5000;
+/// RomLibrary.MAX_ROMS: the most carts a shelf holds (upstream #122).
+const MAX_ROMS: usize = 10_000;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct RomEntry {

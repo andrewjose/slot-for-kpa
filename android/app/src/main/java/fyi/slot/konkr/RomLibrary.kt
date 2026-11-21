@@ -15,10 +15,17 @@ import java.util.Locale
  * No commercial games, BIOS files, or writable access are requested or copied.
  */
 internal object RomLibrary {
-    internal const val MAX_ROMS = 5000
-    /** Files listed before reading: room for ZIPs and .bins that are not carts. */
-    private const val MAX_CANDIDATES = MAX_ROMS * 2
-    private const val MAX_DIRECTORIES = 1500
+    /**
+     * The most carts a shelf holds (library.rs keeps the same bound). 5,000
+     * left a bigger folder with an empty shelf (upstream #122, 2.5.1).
+     */
+    internal const val MAX_ROMS = 10_000
+    /** Files listed before reading: room for ZIPs and .bins that are not
+     *  carts (other systems' ZIPs in folders with names slot. doesn't know). */
+    private const val MAX_CANDIDATES = MAX_ROMS * 3
+    private const val MAX_DIRECTORIES = 5000
+    /** The saved index of MAX_ROMS carts, with long non-Latin names. */
+    internal const val CACHE_MAX_BYTES = 32 * 1024 * 1024
     private const val MAX_DEPTH = 12
 
     internal data class ScanResult(val json: String, val count: Int, val truncated: Boolean)
@@ -80,11 +87,11 @@ internal object RomLibrary {
     fun scan(context: Context, treeUri: Uri, oldGamesJson: String? = null,
              progress: ((done: Int, total: Int) -> Unit)? = null,
              shelve: ((platform: String, colorOnly: Boolean) -> String?)? = null,
-             tgcdTree: Boolean = false): ScanResult {
-        val previous = HashMap<String, JSONObject>()
+             tgcdTree: Boolean = false, keepPrevious: Boolean = true): ScanResult {
+        val previous = LinkedHashMap<String, JSONObject>()
         val cachedJson = oldGamesJson ?: try {
             val cache = java.io.File(context.filesDir, "rom-library-cache-v1.json")
-            if (cache.length() > 8L * 1024 * 1024) null
+            if (cache.length() > CACHE_MAX_BYTES) null
             else JSONObject(cache.readText(Charsets.UTF_8)).let { meta ->
                 if (meta.optInt("schema") == 1 &&
                     meta.optString("root") == treeUri.toString())
@@ -315,6 +322,18 @@ internal object RomLibrary {
             games.put(game)
         }
         progress?.invoke(found.size, found.size)
+        // A partial read never removes a cart: the carts of the last index
+        // this scan didn't reach stay, after the ones it found (upstream
+        // #122: a fresh install used to keep its empty shelf instead). With
+        // per-system folders, scanRoots does this across all the folders.
+        if (truncated && keepPrevious) {
+            val listed = HashSet<String>(games.length() * 2)
+            for (k in 0 until games.length()) listed.add(games.getJSONObject(k).optString("uri"))
+            for ((uri, old) in previous) {
+                if (games.length() >= MAX_ROMS) break
+                if (uri !in listed) games.put(old)
+            }
+        }
         android.util.Log.i("SlotKonkr", "ROM scan: $directories folders, ${games.length()} carts, " +
             "headers read=$headersRead, reused=$headersReused")
         return ScanResult(games.toString(), games.length(), truncated)

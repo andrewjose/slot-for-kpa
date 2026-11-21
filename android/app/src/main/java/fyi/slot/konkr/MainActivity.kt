@@ -99,7 +99,7 @@ class MainActivity : Activity() {
         private const val STATE_ROOT = SaveFolders.STATE_ROOT
         private const val ROM_CACHE_NAME = "rom-library-cache-v1.json"
         private const val ROM_CACHE_SCHEMA = 1
-        private const val ROM_CACHE_MAX_BYTES = 8 * 1024 * 1024
+        private const val ROM_CACHE_MAX_BYTES = RomLibrary.CACHE_MAX_BYTES
         private val BUTTONS = setOf(
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
@@ -207,7 +207,9 @@ class MainActivity : Activity() {
     /** `key` is the ROM folders' layout (RomFolders.layoutKey). */
     private data class PendingLibraryIndex(
         val key: String, val json: String, val prepared: String,
-        val serial: Int, val quiet: Boolean
+        val serial: Int, val quiet: Boolean,
+        /** The ROM folder was over slot.'s bounds: some games were skipped. */
+        val partial: Boolean = false
     )
     private var pendingLibraryIndex: PendingLibraryIndex? = null
     private lateinit var taskIndicators: SlotShelfTaskIndicators
@@ -3519,7 +3521,13 @@ class MainActivity : Activity() {
                 Log.w(TAG, "ROM cache write failed; displayed shelf is intact", error)
             }
         }
-        if (!next.quiet) {
+        if (next.partial) {
+            // Even after a quiet scan: the player should know why some
+            // games are missing (upstream #122).
+            SlotToast.makeText(this,
+                "ROM folder too big: $count cartridges ready, some games skipped.",
+                Toast.LENGTH_LONG).show()
+        } else if (!next.quiet) {
             SlotToast.makeText(this,
                 if (count == 1) "1 cartridge ready." else "$count cartridges ready.",
                 Toast.LENGTH_SHORT).show()
@@ -3562,15 +3570,20 @@ class MainActivity : Activity() {
                 val result = scanRoots(roots, previous, progress)
                 if (scanSerial.get() != serial) return@execute
                 // A bounded/incomplete SAF scan is not evidence that a ROM
-                // was removed. Fail closed, retaining the previous shelf.
-                if (result.truncated) {
+                // was removed: every earlier cart was kept. What it found is
+                // added (upstream #122: a fresh install with a folder over
+                // the bounds kept its empty shelf); with nothing new, the
+                // shelf stays as it is.
+                val partial = result.truncated
+                if (partial && (result.count == 0 ||
+                        (previous != null && RomLibrary.sameIndex(previous, result.json)))) {
                     Log.w(TAG, "Incomplete SAF ROM listing: retaining existing index")
                     runOnUiThread {
                         if (!isDestroyed && scanSerial.get() == serial && !quiet) {
                             libraryRefreshIndicator.hide()
                             nativeSetShelfStatus(shelfNone)
                             SlotToast.makeText(this,
-                                "ROM folder partly read. Carts kept.",
+                                "ROM folder too big: some games skipped.",
                                 Toast.LENGTH_LONG).show()
                         }
                     }
@@ -3595,7 +3608,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed || scanSerial.get() != serial) return@runOnUiThread
                     pendingLibraryIndex = PendingLibraryIndex(
-                        key, result.json, prepared, serial, quiet)
+                        key, result.json, prepared, serial, quiet, partial = partial)
                     publishPendingLibraryIfIdle()
                 }
             } catch (error: Exception) {
@@ -3628,16 +3641,22 @@ class MainActivity : Activity() {
                 progress?.let { report -> { done: Int, total: Int ->
                     report(offset + done, if (total == 0) 0 else offset + total)
                 } }, { platform, colorOnly -> RomFolders.shelve(root, platform, colorOnly, own) },
-                tgcdTree = root.system == RomFolders.System.TGCD)
+                tgcdTree = root.system == RomFolders.System.TGCD, keepPrevious = false)
             truncated = truncated || part.truncated
             parts.add(part.json)
             before += part.count
         }
-        val json = RomFolders.merge(parts)
-        val count = JSONArray(json).length()
-        // The library's bound (RomLibrary.indexEntries) holds across folders.
-        if (count > RomLibrary.MAX_ROMS) return RomLibrary.ScanResult("[]", 0, truncated = true)
-        return RomLibrary.ScanResult(json, count, truncated)
+        // A partial read never removes a cart: the last index's carts that
+        // no folder reached stay, after the ones found (upstream #122).
+        if (truncated && previous != null) parts.add(previous)
+        val merged = JSONArray(RomFolders.merge(parts))
+        // The library's bound (RomLibrary.indexEntries) holds across folders:
+        // over it, the first MAX_ROMS stay rather than an empty shelf.
+        if (merged.length() <= RomLibrary.MAX_ROMS)
+            return RomLibrary.ScanResult(merged.toString(), merged.length(), truncated)
+        val capped = JSONArray()
+        for (i in 0 until RomLibrary.MAX_ROMS) capped.put(merged.get(i))
+        return RomLibrary.ScanResult(capped.toString(), capped.length(), truncated = true)
     }
 
     override fun onDestroy() {
