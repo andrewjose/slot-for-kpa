@@ -586,6 +586,12 @@ fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
     // Its pad has no L2 / R2: they stay Fast Forward and Rewind.
     assert_eq!(game_controls(104, Platform::Tgcd == Platform::Psx), 0);
     assert!(!crate::controls::console_buttons("tgcd").iter().any(|b| b.name == "L2"));
+    // Its in-game Shader row redraws the game, as the PlayStation's does.
+    for platform in Platform::ALL {
+        if let Some(key) = crate::settings::Settings::home_shader_key(platform) {
+            assert!(game_look_key(key), "{platform:?}");
+        }
+    }
     let mut settings = crate::settings::Settings::default();
     assert!(settings.change(73, true));
     assert_eq!(settings.shader_tgcd, crate::settings::Shader::ZfastCrt);

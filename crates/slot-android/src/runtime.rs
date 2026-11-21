@@ -640,6 +640,12 @@ const MENU_TEXT: [&str; 137] = [
     "TurboGrafx-CD",                      // 136
 ];
 
+/// In-game Screen keys that change the picture itself: the paused game's
+/// look is redone after them (each system's shader, palette, LCD Effect).
+fn game_look_key(key: usize) -> bool {
+    matches!(key, 0 | 1 | 3 | 21 | 47 | 48 | 49 | 66..=68 | 70 | 73)
+}
+
 /// Settings > Systems, top to bottom.
 const SYSTEM_ORDER: [Platform; 8] = [
     Platform::Gba, Platform::Gbc, Platform::Gb,
@@ -5240,7 +5246,7 @@ impl Engine {
         self.game_emulation=Some(profile);
         if matches!(key,26|27) {self.tell_hidden_bezel();}
         let view=self.game_settings();
-        if matches!(key,0|1|3|21|47|48|49|66..=68|70) {
+        if game_look_key(key) {
             self.apply_game_look();
         }
         // A shader change can switch to/from a preset with its own GBA Color.
