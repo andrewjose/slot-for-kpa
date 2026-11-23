@@ -259,6 +259,10 @@ internal object DiscLabels {
                 val target = CartLabelPaths.file(context.filesDir, disc.uri)
                 // Never over a label Cart Studio saved meanwhile.
                 if (target.exists()) { outcome = "EXISTS"; continue }
+                // Another game's cover (a hack keeps its game's product code):
+                // the shelf adds the disc's file name.
+                CartLabelPaths.markBorrowed(target,
+                    CartLabelPaths.differs(disc.firstName.ifBlank { disc.title }, name))
                 writeAtomic(target, png)
                 outcome = "SAVED"
                 onSaved(disc.uri)

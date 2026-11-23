@@ -261,13 +261,51 @@ fn mask_of(s: &Spec) -> std::borrow::Cow<'static, [u8]> {
     }
 }
 
-/// The cart's own label, at its well's size in texels.
+/// The cart's own label, at its well's size in texels. A label borrowed
+/// from another game (Android's guess for a hack: a `.title` marker beside
+/// the label file) carries the cart's own file name along its bottom, so
+/// a shelf of one game's hacks still tells them apart.
 fn label_art(cart: &Cart, w: u32, h: u32) -> Option<Vec<u8>> {
     let path = cart.label.as_deref()?;
-    match body_of(cart) {
+    let mut art = match body_of(cart) {
         Body::Home(_) => art::fit_label(path, w, h),
         _ => art::cover(path, w, h),
+    }?;
+    if borrowed_label(path) {
+        title_band(&mut art, w, h, &cart.stem);
     }
+    Some(art)
+}
+
+/// A label file Android chose for another game than the cart's own.
+pub fn borrowed_label(label: &std::path::Path) -> bool {
+    label.with_extension("title").is_file()
+}
+
+/// The file name in light ink on a dark band across the bottom of a label
+/// (`w` x `h` texels), at most two lines.
+pub fn title_band(rgba: &mut [u8], w: u32, h: u32, title: &str) {
+    if rgba.len() < (w * h * 4) as usize || w == 0 || h < 8 {
+        return;
+    }
+    let k = density::scale();
+    let band_h = ((h as f32) * 0.30).round().max(1.0) as u32;
+    let y0 = h - band_h;
+    let start = (y0 * w * 4) as usize;
+    let end = (h * w * 4) as usize;
+    let band = &mut rgba[start..end];
+    for p in band.chunks_exact_mut(4) {
+        for c in 0..3 {
+            p[c] = ((u32::from(p[c]) * 64 + 127) / 255) as u8;
+        }
+        p[3] = 255;
+    }
+    let Some(font) = text::label_font() else { return };
+    let (lw, lh) = (w as f32 / k, band_h as f32 / k);
+    let pad = (lh * 0.12).max(2.0);
+    let layout = text::fit_box(font, title, lw - 2.0 * pad, lh - 2.0 * pad, 2,
+        (lh - 2.0 * pad) / 2.0, (MIN_PX * 0.8).min((lh - 2.0 * pad) / 2.0));
+    text::draw_centred(band, w, band_h, &density::scaled(&layout), [0xf4, 0xf1, 0xea]);
 }
 
 /// Cart Studio: a label picture of any size (straight RGBA) fitted to this
