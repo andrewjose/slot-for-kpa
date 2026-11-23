@@ -4299,7 +4299,7 @@ impl Engine {
                             },
                             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
                             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
-                            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } |
+                            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } |
                             ShelfOverlay::States | ShelfOverlay::Cheats { .. } |
                             ShelfOverlay::LcdEffect { .. } | ShelfOverlay::None => {}
                         }
@@ -7494,7 +7494,7 @@ impl Engine {
         if self.game.is_some() && matches!(self.overlay,
             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
-            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } |
+            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } |
             ShelfOverlay::LayoutPorts { game: true, .. } | ShelfOverlay::LayoutPort { game: true, .. } |
             ShelfOverlay::Cheats { .. } | ShelfOverlay::LcdEffect { .. }) {
             // A paused game is drawn at full light (no Black Frame Insertion).
