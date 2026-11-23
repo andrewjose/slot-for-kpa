@@ -137,6 +137,7 @@ fn session(root: &Path, failure: Failure) -> (GameSession, Arc<Mutex<Calls>>) {
         gpsp_serial: "auto",
         rom_path: root.join("test.gba"),
         rom_stem: "test".into(),
+        disc_memory: None,
         save: root.join("test.srm"),
         rtc: root.join("test.rtc"),
         manual_export_prefix: root.join("manual"),
