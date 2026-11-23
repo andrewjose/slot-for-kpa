@@ -21,10 +21,12 @@ pub enum Outline {
     MegaDrive,
     MegaDriveJp,
     MegaDriveEa,
+    /// A CD jewel case: PlayStation and TurboGrafx-CD discs.
+    JewelCase,
 }
 
 impl Outline {
-    pub const NAMES: [(Outline, &'static str); 12] = [
+    pub const NAMES: [(Outline, &'static str); 13] = [
         (Outline::Auto, "auto"),
         (Outline::Notched, "notched"),
         (Outline::Rounded, "rounded"),
@@ -37,6 +39,7 @@ impl Outline {
         (Outline::MegaDrive, "megadrive"),
         (Outline::MegaDriveJp, "megadrive-jp"),
         (Outline::MegaDriveEa, "megadrive-ea"),
+        (Outline::JewelCase, "jewelcase"),
     ];
 
     pub fn name(self) -> &'static str {
@@ -58,6 +61,8 @@ impl Outline {
             }
             Outline::Snes | Outline::SnesUs => Some(Platform::Snes),
             Outline::MegaDrive | Outline::MegaDriveJp | Outline::MegaDriveEa => Some(Platform::Md),
+            // TurboGrafx-CD discs come in the same case.
+            Outline::JewelCase => Some(Platform::Psx),
         }
     }
 }

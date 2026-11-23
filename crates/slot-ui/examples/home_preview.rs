@@ -34,6 +34,9 @@ fn main() {
         ("Sonic The Hedgehog (USA, Europe)", Platform::Md, false, "(C)SEGA 1991.APR", None),
         ("Sonic The Hedgehog 2 (Japan)", Platform::Md, false, "(C)SEGA 1992.NOV", None),
         ("Road Rash (USA, Europe)", Platform::Md, true, "(C)T-50 1991.SEP", None),
+        // Discs: the jewel case. HOME_PREVIEW_COVER=<png> puts a cover in it.
+        ("Raiden Project, The (USA)", Platform::Psx, false, "", None),
+        ("Ys Book I & II (USA)", Platform::Tgcd, false, "", None),
     ];
     for (i, (stem, platform, battery, maker, chosen)) in games.iter().enumerate() {
         let auto = slot_ui::home_shell(*platform, stem, "", maker);
@@ -42,7 +45,8 @@ fn main() {
             platform: *platform,
             stem: stem.to_string(),
             rom: PathBuf::from(format!("{stem}.rom")),
-            label: None,
+            label: matches!(platform, Platform::Psx | Platform::Tgcd)
+                .then(|| std::env::var_os("HOME_PREVIEW_COVER").map(PathBuf::from)).flatten(),
             title: stem.to_string(),
             code: String::new(),
             shell,
@@ -54,7 +58,7 @@ fn main() {
         let finish = shell.map_or(ShellFinish::Solid, |s| s.finish);
         println!("{i:02}\t{stem}\t{:?}\t{:?}\tbattery={battery}", slot_ui::body_of(&cart), finish);
     }
-    for (p, name) in [(Platform::Nes, "nes"), (Platform::Snes, "snes"), (Platform::Md, "md")] {
+    for (p, name) in [(Platform::Nes, "nes"), (Platform::Snes, "snes"), (Platform::Md, "md"), (Platform::Psx, "psx")] {
         let core = slot_store::Core::primary_for(p);
         save(&dir, &format!("chip_{name}.png"), &slot_ui::home_chip_face(p, Some(core)));
     }

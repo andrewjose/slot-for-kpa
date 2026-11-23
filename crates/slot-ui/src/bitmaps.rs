@@ -306,7 +306,8 @@ pub fn home_slot_family(cart: &slot_store::Cart) -> Option<usize> {
         M::Famicom | M::FamicomNamco | M::FamicomKonami => 0,
         M::Nes => 1,
         M::Snes | M::SnesUs => 2,
-        M::MegaDrive | M::MegaDriveJp | M::MegaDriveEa => 3,
+        // A disc case goes into the Mega Drive's wide slot: the same width.
+        M::MegaDrive | M::MegaDriveJp | M::MegaDriveEa | M::JewelCase => 3,
     })
 }
 
