@@ -135,6 +135,27 @@ fn solar_cart(rom: &Path, which: Core, platform: Platform) -> Option<Solar> {
     else { None }
 }
 
+/// Tilt and gyro cartridges, which only mGBA emulates: Yoshi Topsy-Turvy
+/// and Koro Koro Puzzle (tilt), WarioWare: Twisted! (gyro), and the Game
+/// Boy Color MBC7 carts, Kirby Tilt 'n' Tumble's (upstream v2.3.0).
+fn motion_cart(rom: &Path, which: Core, platform: Platform) -> bool {
+    if which != Core::Mgba { return false; }
+    let Ok(mut file) = std::fs::File::open(rom) else { return false; };
+    match platform {
+        Platform::Gba => {
+            let mut code = [0u8; 3];
+            file.seek(SeekFrom::Start(0xAC)).is_ok() && file.read_exact(&mut code).is_ok()
+                && [b"KYG", b"KHP", b"RZW"].contains(&&code)
+        }
+        Platform::Gb | Platform::Gbc => {
+            let mut cart = [0u8; 1];
+            file.seek(SeekFrom::Start(0x147)).is_ok() && file.read_exact(&mut cart).is_ok()
+                && cart[0] == 0x22
+        }
+        _ => false,
+    }
+}
+
 fn sma4_runahead_guard(rom: &Path, platform: Platform) -> bool {
     if platform != Platform::Gba { return false; }
     let Ok(mut file) = std::fs::File::open(rom) else { return false; };
@@ -322,6 +343,7 @@ pub struct GameSession {
     kept_flash_save: bool,
     sma4_runahead_guard: bool,
     solar: Option<Solar>,
+    motion: bool,
     // The light handed to a solar cart; None while the light sensor decides.
     sun_luminance: Option<u8>,
     // AUTO: the minute of day the sun was last set for.
@@ -639,6 +661,7 @@ impl GameSession {
             }).unwrap_or(false);
         let palette_live = dmg_only && gb_palette.is_some();
         let solar = solar_cart(rom, which, platform);
+        let motion = motion_cart(rom, which, platform);
         slot_retro::sensors::set_light_wanted(false);
         slot_retro::sensors::set_tilt_inverted(platform != Platform::Gba);
         match which {
@@ -1008,7 +1031,7 @@ impl GameSession {
             mgba_flash_runahead_guard: flash_guard,
             kept_flash_save: false,
             sma4_runahead_guard: sma4_guard,
-            solar, sun_luminance: None, sun_auto_minutes: None,
+            solar, motion, sun_luminance: None, sun_auto_minutes: None,
             pending_undo: None, last_sram: Instant::now(), battery_writer,
             cheat_file: linked_boot.is_none()
                 .then(|| crate::cheats::saved_path(storage, platform, rom_stem)),
@@ -1934,6 +1957,9 @@ impl GameSession {
 
     pub fn solar(&self) -> bool { self.solar.is_some() }
 
+    /// A tilt or gyro cartridge: its Sensitivity row and shortcuts.
+    pub fn motion(&self) -> bool { self.motion }
+
     /// The highest manual sun of this solar game, one per gauge bar.
     pub fn sun_top(&self) -> u8 {
         crate::emulation::sun_top(self.solar == Some(Solar::Boktai1))
@@ -2623,5 +2649,30 @@ mod xy_mapping_tests {
         let both = xy_buttons(ButtonMask(ButtonMask::A | ButtonMask::B |
             ButtonMask::X | ButtonMask::Y | ButtonMask::RIGHT), false, 5);
         assert_eq!(both.0, ButtonMask::A | ButtonMask::B | ButtonMask::RIGHT);
+    }
+
+    #[test]
+    fn tilt_and_gyro_carts_are_found_by_their_header() {
+        use super::{motion_cart, Core, Platform};
+        let dir = std::env::temp_dir().join(format!("slot-motion-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let rom = |name: &str, at: usize, bytes: &[u8]| {
+            let mut data = vec![0u8; 0x200];
+            data[at..at + bytes.len()].copy_from_slice(bytes);
+            let path = dir.join(name);
+            std::fs::write(&path, data).unwrap();
+            path
+        };
+        let warioware = rom("rzw.gba", 0xAC, b"RZWE");
+        let yoshi = rom("kyg.gba", 0xAC, b"KYGE");
+        let other = rom("axv.gba", 0xAC, b"AXVE");
+        let kirby = rom("kirby.gbc", 0x147, &[0x22]);
+        assert!(motion_cart(&warioware, Core::Mgba, Platform::Gba));
+        assert!(motion_cart(&yoshi, Core::Mgba, Platform::Gba));
+        assert!(!motion_cart(&other, Core::Mgba, Platform::Gba));
+        assert!(!motion_cart(&warioware, Core::Gpsp, Platform::Gba), "gpSP has no sensors");
+        assert!(motion_cart(&kirby, Core::Mgba, Platform::Gbc));
+        assert!(!motion_cart(&kirby, Core::Gambatte, Platform::Gbc));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

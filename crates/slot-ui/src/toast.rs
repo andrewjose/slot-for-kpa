@@ -54,6 +54,8 @@ pub enum Toast {
     Sun(u8),
     SunSensor,
     SunAuto,
+    /// A tilt or gyro game's sensitivity, 1..=10.
+    Motion(u8),
     RunAheadOff,
     RunAhead1,
     RunAhead2,
@@ -62,6 +64,12 @@ pub enum Toast {
 const SUN_TEXT: [&str; 11] = [
     "Sun: 0", "Sun: 1", "Sun: 2", "Sun: 3", "Sun: 4", "Sun: 5",
     "Sun: 6", "Sun: 7", "Sun: 8", "Sun: 9", "Sun: 10",
+];
+
+const MOTION_TEXT: [&str; 10] = [
+    "Sensitivity: 1", "Sensitivity: 2", "Sensitivity: 3", "Sensitivity: 4",
+    "Sensitivity: 5", "Sensitivity: 6", "Sensitivity: 7", "Sensitivity: 8",
+    "Sensitivity: 9", "Sensitivity: 10",
 ];
 
 impl Toast {
@@ -117,6 +125,7 @@ impl Toast {
             .into_iter()
             .chain(GbPalette::all().map(Toast::Palette))
             .chain((0..SUN_TEXT.len() as u8).map(Toast::Sun))
+            .chain((1..=MOTION_TEXT.len() as u8).map(Toast::Motion))
             .collect()
     }
 
@@ -125,6 +134,8 @@ impl Toast {
             Toast::Palette(p) => Self::FIXED.len() + p.index(),
             Toast::Sun(level) => Self::FIXED.len() + GbPalette::COUNT
                 + usize::from(level.min(10)),
+            Toast::Motion(level) => Self::FIXED.len() + GbPalette::COUNT + SUN_TEXT.len()
+                + usize::from(level.clamp(1, 10) - 1),
             fixed => Self::FIXED.iter().position(|t| *t == fixed).unwrap_or(0),
         }
     }
@@ -174,6 +185,7 @@ impl Toast {
             Toast::Sun(level) => SUN_TEXT[usize::from(level.min(10))],
             Toast::SunSensor => "Sun: Sensor",
             Toast::SunAuto => "Sun: Auto",
+            Toast::Motion(level) => MOTION_TEXT[usize::from(level.clamp(1, 10) - 1)],
             Toast::RunAheadOff => "Run-Ahead: Off",
             Toast::RunAhead1 => "Run-Ahead: 1 Frame",
             Toast::RunAhead2 => "Run-Ahead: 2 Frames",

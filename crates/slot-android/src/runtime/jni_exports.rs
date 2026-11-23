@@ -654,14 +654,16 @@ pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeSensorsWanted(
     jint::from(slot_retro::sensors::wanted())
 }
 
-/// One Android SensorEvent, raw: m/s², rad/s or lux in `x`.
+/// One Android SensorEvent, raw: m/s², rad/s or lux in `x`, with its
+/// monotonic measurement timestamp (nanoseconds since boot).
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeSensorEvent(
     _env: *mut c_void, _this: *mut c_void, sensor: jint, x: f32, y: f32, z: f32,
+    timestamp_ns: jni::sys::jlong,
 ) {
     use slot_retro::sensors;
     match sensor as u8 {
-        sensors::ACCELEROMETER => sensors::push_accelerometer(x, y, z),
+        sensors::ACCELEROMETER => sensors::push_accelerometer(x, y, z, timestamp_ns.max(0) as u64),
         sensors::GYROSCOPE => sensors::push_gyroscope(x, y, z),
         sensors::ILLUMINANCE => sensors::push_illuminance(x),
         _ => {}

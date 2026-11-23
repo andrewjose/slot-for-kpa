@@ -759,3 +759,12 @@ fn black_frame_insertion_needs_twice_the_games_rate() {
 fn oled_black_names_its_own_value() {
     assert_eq!(SETTING_VALUE_NAMES[OLED_BLACK_VALUE], "OLED Black");
 }
+
+#[test]
+fn motion_games_get_a_sensitivity_row() {
+    assert_eq!(MENU_TEXT[SENSITIVITY_TEXT], "Sensitivity");
+    // The row's value is the number 1 to 10.
+    for level in crate::emulation::MOTION_MIN..=crate::emulation::MOTION_MAX {
+        assert_eq!(SETTING_VALUE_NAMES[54 + usize::from(level)], level.to_string());
+    }
+}
