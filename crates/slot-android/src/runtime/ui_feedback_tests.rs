@@ -768,3 +768,19 @@ fn motion_games_get_a_sensitivity_row() {
         assert_eq!(SETTING_VALUE_NAMES[54 + usize::from(level)], level.to_string());
     }
 }
+
+#[test]
+fn start_pictures_come_back_from_their_cache() {
+    let dir = std::env::temp_dir().join(format!("slot-start-cache-{}", std::process::id()));
+    let cache = crate::cart_disk_cache::DiskCache::at(dir.clone());
+    let job = StartJob::Bezel(false);
+    let scale = slot_ui::density::scale();
+    let StartPicture::Texture(made, w, h) = job.make_cached(Some(&cache), scale) else { panic!("a bezel is a texture") };
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "kept on disk");
+    let StartPicture::Texture(cached, cw, ch) = job.make_cached(Some(&cache), scale) else { panic!() };
+    assert_eq!((cw, ch), (w, h));
+    assert!(cached == made, "the cached picture is the one made");
+    // A shadow is quick to make and never cached.
+    assert!(StartJob::Shadow(None).cache_key(scale).is_none());
+    std::fs::remove_dir_all(dir).unwrap();
+}

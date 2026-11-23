@@ -14,13 +14,22 @@ const MAX_DISK_FILES: usize = 400;
 pub(crate) struct DiskCache {
     dir: PathBuf,
     theme: Vec<u8>,
+    /// The largest picture kept: a cart face, or a full-canvas bezel.
+    max_face: usize,
 }
+/// The start pictures' limit: a GB/GBC bezel is 960x640 on the KONKR.
+const MAX_START_PICTURE_BYTES: usize = 4 * 1024 * 1024;
 impl DiskCache {
     pub fn new(root: &Path) -> Self {
         Self {
             dir: root.join("Cache").join("cartridge-faces-qa102"),
             theme: fs::read(root.join("Config/theme.txt")).unwrap_or_default(),
+            max_face: MAX_FACE_BYTES,
         }
+    }
+    /// A cache of other pictures in [dir] (the cold renderer's, upstream beta42).
+    pub fn at(dir: PathBuf) -> Self {
+        Self { dir, theme: Vec::new(), max_face: MAX_START_PICTURE_BYTES }
     }
     pub fn key(&self, cart: &Cart) -> String {
         // Rust Cart debug covers URI, platform, name, code, label and shell.
@@ -44,7 +53,7 @@ impl DiskCache {
     fn path(&self, key: &str) -> PathBuf { self.dir.join(format!("{key}.rgba.lz4")) }
     pub fn read(&self, key: &str) -> Option<CartFace> {
         let path=self.path(key);
-        if fs::metadata(&path).ok()?.len() > MAX_FACE_BYTES as u64 + 64 {
+        if fs::metadata(&path).ok()?.len() > self.max_face as u64 + 64 {
             return None;
         }
         let data=fs::read(path).ok()?;
@@ -52,7 +61,7 @@ impl DiskCache {
         let w=u32::from_le_bytes(data[8..12].try_into().ok()?);
         let h=u32::from_le_bytes(data[12..16].try_into().ok()?);
         let expected=w.checked_mul(h)?.checked_mul(4)? as usize;
-        if w==0 || h==0 || !(4..=MAX_FACE_BYTES).contains(&expected) {return None;}
+        if w==0 || h==0 || !(4..=self.max_face).contains(&expected) {return None;}
         let size=u32::from_le_bytes(data[16..20].try_into().ok()?) as usize;
         if size!=expected {return None;}
         let rgba=lz4_flex::decompress_size_prepended(&data[16..]).ok()?;
@@ -62,7 +71,7 @@ impl DiskCache {
     pub fn write(&self, key:&str, face:&CartFace) -> io::Result<()> {
         let raw=face.w.checked_mul(face.h).and_then(|v|v.checked_mul(4))
             .ok_or_else(||io::Error::new(io::ErrorKind::InvalidData,"bad face size"))? as usize;
-        if raw!=face.rgba.len() || raw>MAX_FACE_BYTES {
+        if raw!=face.rgba.len() || raw>self.max_face {
             return Err(io::Error::new(io::ErrorKind::InvalidData,"bad face pixels"));
         }
         fs::create_dir_all(&self.dir)?;
