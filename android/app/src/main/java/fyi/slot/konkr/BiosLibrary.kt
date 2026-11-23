@@ -122,7 +122,7 @@ internal object BiosLibrary {
      */
     fun seedBundled(context: Context): List<String> {
         val assets = context.assets
-        val names = try { assets.list("bios")?.toList().orEmpty() } catch (_: Exception) { emptyList() }
+        val names = try { assets.list("bios")?.toList().orEmpty() } catch (e: Exception) { emptyList() }
         if (names.isEmpty()) return emptyList()
         val dest = File(context.filesDir, "BIOS").apply { mkdirs() }
         if (!dest.isDirectory) return emptyList()
@@ -134,7 +134,7 @@ internal object BiosLibrary {
             if (target.isFile && target.length().toInt() in sizes) continue
             val bytes = try {
                 assets.open("bios/$asset").use { it.readBytes() }
-            } catch (_: Exception) { continue }
+            } catch (e: Exception) { continue }
             if (bytes.size !in sizes) continue
             if (name == "gba_bios.bin" && bytes[0] != 0x18.toByte()) continue
             val temp = File(dest, ".$name.tmp")
