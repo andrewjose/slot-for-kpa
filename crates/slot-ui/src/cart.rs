@@ -267,14 +267,33 @@ fn mask_of(s: &Spec) -> std::borrow::Cow<'static, [u8]> {
 /// a shelf of one game's hacks still tells them apart.
 fn label_art(cart: &Cart, w: u32, h: u32) -> Option<Vec<u8>> {
     let path = cart.label.as_deref()?;
-    let mut art = match body_of(cart) {
-        Body::Home(_) => art::fit_label(path, w, h),
-        _ => art::cover(path, w, h),
-    }?;
+    let mut art = plain_label_art(cart, w, h)?;
     if borrowed_label(path) {
         title_band(&mut art, w, h, &cart.stem);
     }
     Some(art)
+}
+
+/// The cart's label file at its well's size in texels, without the name band.
+fn plain_label_art(cart: &Cart, w: u32, h: u32) -> Option<Vec<u8>> {
+    let path = cart.label.as_deref()?;
+    match body_of(cart) {
+        Body::Home(_) => art::fit_label(path, w, h),
+        _ => art::cover(path, w, h),
+    }
+}
+
+/// Cart Studio: the cart's label file at its well's texels, without the
+/// name band (the editor draws it, or not, as its File name row says).
+pub fn label_file_art(cart: &Cart) -> Option<Vec<u8>> {
+    let (w, h) = label_size(cart);
+    plain_label_art(cart, px(w), px(h))
+}
+
+/// Cart Studio: the name band on a label at the cart's well size.
+pub fn label_name_band(cart: &Cart, rgba: &mut [u8]) {
+    let (w, h) = label_size(cart);
+    title_band(rgba, px(w), px(h), &cart.stem);
 }
 
 /// A label file Android chose for another game than the cart's own.

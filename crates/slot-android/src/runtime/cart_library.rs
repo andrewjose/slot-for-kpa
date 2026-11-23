@@ -180,6 +180,7 @@ impl Engine {
         if let Some(old) = old {
             if outcome.label.is_none() { outcome.label = old.outcome.label; }
             if outcome.shell.is_none() { outcome.shell = old.outcome.shell; }
+            if outcome.name_band.is_none() { outcome.name_band = old.outcome.name_band; }
         }
         if let Some(library) = self.cart_library.as_mut() {
             library.drafts.insert(uri, Draft { cart, outcome, face: tex });
