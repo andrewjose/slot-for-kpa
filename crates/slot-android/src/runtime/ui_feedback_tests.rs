@@ -597,3 +597,8 @@ fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
     assert_eq!(settings.shader_tgcd, crate::settings::Shader::ZfastCrt);
     assert_eq!(settings.shader_psx, crate::settings::Shader::Off, "its own shader");
 }
+
+#[test]
+fn oled_black_names_its_own_value() {
+    assert_eq!(SETTING_VALUE_NAMES[OLED_BLACK_VALUE], "OLED Black");
+}

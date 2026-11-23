@@ -689,6 +689,8 @@ const SETTING_VALUE_NAMES: [&str; 120] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "PCSX-ReARMed", "Beetle PCE Fast",
                                "PLAYSTATION", "TURBOGRAFX-16", "PC ENGINE",
                                "OLED Black"];
+/// SETTING_VALUE_NAMES' "OLED Black" (Interface > Wallpaper).
+const OLED_BLACK_VALUE: usize = 119;
 
 /// The value face (an index in SETTING_VALUE_NAMES) a Settings key shows,
 /// None for an action-only row. Every key a menu lists must have one: the
@@ -740,7 +742,7 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         33 => if settings.icons_on_bottom { 98 } else { 99 },
         16 => match &settings.wallpaper {
             crate::settings::WallpaperPick::None => 17,
-            crate::settings::WallpaperPick::Black => 119,
+            crate::settings::WallpaperPick::Black => OLED_BLACK_VALUE,
             crate::settings::WallpaperPick::Random => 18,
             crate::settings::WallpaperPick::Shelf => 65,
             crate::settings::WallpaperPick::Default => 19,
