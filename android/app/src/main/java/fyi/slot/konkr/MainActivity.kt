@@ -2370,6 +2370,10 @@ class MainActivity : Activity() {
                         onSaved = { uri -> autoLabelUpdates.add(uri) }) || anotherBatch
                 } catch (error: Exception) {
                     Log.w("SlotAutoLabels", "Automatic artwork deferred", error)
+                } catch (error: LinkageError) {
+                    // A label helper that can't load (ExceptionInInitializerError)
+                    // must cost the labels, never the app.
+                    Log.e("SlotAutoLabels", "Automatic artwork unavailable", error)
                 } finally {
                     autoLabelsRunning.set(false)
                     val recheck = autoLabelsRestartRequested.getAndSet(false)
