@@ -23,12 +23,13 @@ internal object Systems {
     private val SNES_EXT = setOf("sfc", "smc")
     // .bin is shared with other systems: only a SEGA header makes it a Mega Drive cart.
     private val MD_EXT = setOf("md", "gen", "smd", "bin")
-    /** PlayStation discs: single-file images only (a .cue names its tracks,
-     *  which a library folder can't hand over by name). */
-    val DISC_EXT = setOf("chd", "pbp", "m3u")
-    /** TurboGrafx-CD discs: a CHD, in a TurboGrafx-CD folder (a CHD alone
-     *  doesn't say which system it is for; elsewhere it is a PlayStation's). */
-    val TGCD_EXT = setOf("chd", "m3u")
+    /** PlayStation discs: CHD, PBP, ISO, a cue sheet (its .bin tracks are
+     *  found beside it at launch, DiscSource) or a playlist of them. */
+    val DISC_EXT = setOf("chd", "pbp", "iso", "cue", "m3u")
+    /** TurboGrafx-CD discs: a CHD or a cue sheet, in a TurboGrafx-CD folder
+     *  (neither says which system it is for; elsewhere it is a PlayStation's).
+     *  No ISO: Beetle PCE Fast doesn't read one. */
+    val TGCD_EXT = setOf("chd", "cue", "m3u")
     /** ES-DE's names for its folder, and the usual others. */
     private val TGCD_FOLDERS = setOf("tg-cd", "tgcd", "pcenginecd", "pcengine-cd", "pce-cd",
         "pcecd", "turbografx-cd", "turbografxcd", "turbografx cd", "pc engine cd")

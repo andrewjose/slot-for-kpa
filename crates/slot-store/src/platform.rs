@@ -63,11 +63,10 @@ impl Platform {
             // .bin is also used by other systems: Android only files a .bin
             // here when its header says SEGA.
             Platform::Md => &["md", "gen", "smd", "bin"],
-            // Single-file disc images only: a .cue names other files,
-            // which a library folder can't hand over by name.
-            Platform::Psx => &["chd", "pbp"],
-            // A CHD is either system's: the library folder tells (Android).
-            Platform::Tgcd => &["chd"],
+            // A cue sheet's tracks are found beside it (Android's DiscSource).
+            Platform::Psx => &["chd", "pbp", "iso", "cue"],
+            // A CHD or cue is either system's: the library folder tells (Android).
+            Platform::Tgcd => &["chd", "cue"],
         }
     }
 

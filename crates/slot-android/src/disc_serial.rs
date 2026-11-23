@@ -125,6 +125,49 @@ fn serial_from_name(file: &str) -> Option<String> {
     Some(format!("{letters}-{digits}"))
 }
 
+/// A plain image of 2048-byte sectors (.iso) or raw 2352-byte ones (a
+/// cue sheet's data track, .bin): which, from the size and the first sync.
+struct Plain {
+    file: File,
+    raw: bool,
+}
+
+impl Plain {
+    fn open(mut file: File) -> Option<Self> {
+        let len = file.metadata().ok()?.len();
+        let mut head = [0u8; 12];
+        file.seek(SeekFrom::Start(0)).ok()?;
+        file.read_exact(&mut head).ok()?;
+        const SYNC: [u8; 12] = [0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0];
+        let raw = head == SYNC || (len % 2352 == 0 && len % 2048 != 0);
+        Some(Self { file, raw })
+    }
+}
+
+impl Sectors for Plain {
+    fn sector(&mut self, lba: u32) -> Option<Vec<u8>> {
+        let mut out = vec![0u8; USER];
+        if self.raw {
+            let mut frame = vec![0u8; 2352];
+            self.file.seek(SeekFrom::Start(u64::from(lba) * 2352)).ok()?;
+            self.file.read_exact(&mut frame).ok()?;
+            let start = if frame[15] == 1 { 16 } else { DATA };
+            out.copy_from_slice(&frame[start..start + USER]);
+        } else {
+            self.file.seek(SeekFrom::Start(u64::from(lba) * USER as u64)).ok()?;
+            self.file.read_exact(&mut out).ok()?;
+        }
+        Some(out)
+    }
+}
+
+/// An .iso's or a cue sheet's first .bin's PlayStation product code.
+pub fn plain_serial(file: File) -> Option<String> {
+    let mut disc = Plain::open(file)?;
+    let cnf = root_file(&mut disc, "SYSTEM.CNF", 4096)?;
+    serial_from_system_cnf(&String::from_utf8_lossy(&cnf))
+}
+
 /// A CHD's PlayStation product code.
 pub fn chd_serial(file: File) -> Option<String> {
     let mut disc = Chd::open(file)?;
@@ -175,6 +218,7 @@ pub fn serial(file: File, ext: &str) -> Option<String> {
     match ext.to_ascii_lowercase().as_str() {
         "chd" => chd_serial(file),
         "pbp" => pbp_serial(file),
+        "iso" | "bin" => plain_serial(file),
         _ => None,
     }
 }
@@ -182,6 +226,44 @@ pub fn serial(file: File, ext: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tiny ISO 9660 image: PVD at 16, root directory at 20 holding
+    /// SYSTEM.CNF at 21, as 2048-byte sectors or raw Mode 2 frames.
+    fn tiny_disc(raw: bool) -> Vec<u8> {
+        let mut user = vec![vec![0u8; USER]; 22];
+        user[16][0] = 1;
+        user[16][1..6].copy_from_slice(b"CD001");
+        let cnf = b"BOOT = cdrom:\\SLUS_005.94;1\r\n";
+        let mut rec = vec![0u8; 34 + 13];
+        rec[0] = rec.len() as u8;
+        rec[2..6].copy_from_slice(&21u32.to_le_bytes());
+        rec[10..14].copy_from_slice(&(cnf.len() as u32).to_le_bytes());
+        rec[32] = 12;
+        rec[33..45].copy_from_slice(b"SYSTEM.CNF;1");
+        let mut root = vec![0u8; 34];
+        root[2..6].copy_from_slice(&20u32.to_le_bytes());
+        root[10..14].copy_from_slice(&(USER as u32).to_le_bytes());
+        user[16][156..190].copy_from_slice(&root);
+        user[20][..rec.len()].copy_from_slice(&rec);
+        user[21][..cnf.len()].copy_from_slice(cnf);
+        if !raw { return user.concat(); }
+        user.iter().flat_map(|u| {
+            let mut f = vec![0u8; 2352];
+            f[..12].copy_from_slice(&[0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0]);
+            f[15] = 2;
+            f[DATA..DATA + USER].copy_from_slice(u);
+            f
+        }).collect()
+    }
+
+    #[test]
+    fn iso_and_bin_images_give_their_product_code() {
+        for (raw, ext) in [(false, "iso"), (true, "bin")] {
+            let mut tmp = tempfile::tempfile().unwrap();
+            std::io::Write::write_all(&mut tmp, &tiny_disc(raw)).unwrap();
+            assert_eq!(serial(tmp, ext).as_deref(), Some("SLUS-00594"), "{ext}");
+        }
+    }
 
     #[test]
     fn boot_lines() {

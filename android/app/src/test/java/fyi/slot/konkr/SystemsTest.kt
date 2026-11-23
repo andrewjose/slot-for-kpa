@@ -31,7 +31,9 @@ class SystemsTest {
     @Test fun playStationDiscsArePlayedInPlace() {
         assertEquals("PSX", Systems.platformFor("chd"))
         assertEquals("PSX", Systems.platformFor("PBP"))
-        assertEquals(null, Systems.platformFor("cue"))
+        // A cue sheet and an ISO too (the cue's tracks are found at launch).
+        assertEquals("PSX", Systems.platformFor("cue"))
+        assertEquals("PSX", Systems.platformFor("ISO"))
         assertTrue(Systems.isDisc("CHD") && Systems.isHome("chd"))
         assertFalse(Systems.isDisc("bin"))
         assertFalse("PSX" in Systems.HOME_PLATFORMS)
@@ -50,6 +52,8 @@ class SystemsTest {
         assertEquals("TGCD", Systems.platformFor("chd", tgcdFolder = true))
         assertEquals("PSX", Systems.platformFor("chd", tgcdFolder = false))
         assertEquals("a PBP is the PlayStation's", "PSX", Systems.platformFor("pbp", tgcdFolder = true))
+        assertEquals("TGCD", Systems.platformFor("cue", tgcdFolder = true))
+        assertEquals("Beetle PCE Fast can't read an ISO", "PSX", Systems.platformFor("iso", tgcdFolder = true))
         assertTrue(Systems.isTgcdFolder("tg-cd") && Systems.isTgcdFolder("PCEngineCD"))
         assertFalse(Systems.isTgcdFolder("psx"))
         assertFalse("tg-cd" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
