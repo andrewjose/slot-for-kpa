@@ -541,9 +541,10 @@ fn console_connector_and_role_follow_the_inserted_cart_and_actual_link_state() {
 #[test]
 fn playstation_pages_and_its_rewind_default() {
     // One core: no Default Core row; Screen Size, Shader, Frame Blending, Controls.
-    assert_eq!(Engine::system_page_rows(Platform::Psx), vec![120, 124, 126, 125]);
-    assert_eq!(Engine::system_page_keys(Platform::Psx), vec![SCREEN_SIZE_KEY, 70, 71, usize::MAX]);
-    assert_eq!(Engine::screen_keys(Platform::Psx), &[SCREEN_SIZE_KEY, 70]);
+    // Wider than 4:3 (the test panel): Watomsk's overlay row too.
+    assert_eq!(Engine::system_page_rows(Platform::Psx), vec![120, 124, 90, 126, 125]);
+    assert_eq!(Engine::system_page_keys(Platform::Psx), vec![SCREEN_SIZE_KEY, 70, 72, 71, usize::MAX]);
+    assert_eq!(Engine::screen_keys(Platform::Psx), &[SCREEN_SIZE_KEY, 70, 72]);
     assert_eq!(MENU_TEXT[135], "PlayStation");
     assert_eq!(SETTING_VALUE_NAMES[core_value(Core::PcsxRearmed)], "PCSX-ReARMed");
     // L2 / R2 are a PlayStation game's buttons, nobody else's.
@@ -706,9 +707,10 @@ fn lcd_effect_menus_edit_the_shared_parameters() {
 #[test]
 fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
     // One core: Screen Size, Shader, Frame Blending, Controls.
-    assert_eq!(Engine::system_page_rows(Platform::Tgcd), vec![120, 124, 126, 125]);
-    assert_eq!(Engine::system_page_keys(Platform::Tgcd), vec![SCREEN_SIZE_KEY, 73, 74, usize::MAX]);
-    assert_eq!(Engine::screen_keys(Platform::Tgcd), &[SCREEN_SIZE_KEY, 73]);
+    // Wider than 4:3 (the test panel): Watomsk's overlay row too.
+    assert_eq!(Engine::system_page_rows(Platform::Tgcd), vec![120, 124, 90, 126, 125]);
+    assert_eq!(Engine::system_page_keys(Platform::Tgcd), vec![SCREEN_SIZE_KEY, 73, 75, 74, usize::MAX]);
+    assert_eq!(Engine::screen_keys(Platform::Tgcd), &[SCREEN_SIZE_KEY, 73, 75]);
     assert_eq!(MENU_TEXT[136], "TurboGrafx-CD");
     assert_eq!(SETTING_VALUE_NAMES[core_value(Core::MednafenPceFast)], "Beetle PCE Fast");
     assert!(Core::single(Platform::Tgcd) && Platform::Tgcd.disc());
