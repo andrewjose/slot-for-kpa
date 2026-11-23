@@ -162,6 +162,9 @@ pub struct GamePass {
     dot_bg: gl::types::GLuint,
     dot_bg_pixels: Option<(u32, Vec<u8>)>,
     power: f32,
+    /// Black Frame Insertion: the picture's light on this refresh (1.0
+    /// normally; the boost on a lit refresh, the dark level on a dark one).
+    gain: f32,
     src: [f32; 4],
     /// Canvas rect the whole 240x160 game texture maps to.
     area: [f32; 4],
@@ -236,12 +239,18 @@ impl GamePass {
             dot_bg,
             dot_bg_pixels: None,
             power: 1.0,
+            gain: 1.0,
             src: WHOLE_TEXTURE,
             area: default_area(),
             size: (SRC_W, SRC_H),
             fit: Fit::Canvas,
             top: false,
         })
+    }
+
+    /// The picture's light on this refresh (Black Frame Insertion).
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = if gain.is_finite() { gain.clamp(0.0, 4.0) } else { 1.0 };
     }
 
     pub fn set_power(&mut self, t: f32) {
@@ -436,7 +445,7 @@ impl GamePass {
             gl::Uniform2f(p.u_src, size.0 as f32, size.1 as f32);
             gl::Uniform4f(p.u_rect, x, y, w, h);
             gl::Uniform4f(p.u_uv, src[0], src[1], src[2], src[3]);
-            gl::Uniform1f(p.u_bright, screen_brightness(self.power));
+            gl::Uniform1f(p.u_bright, screen_brightness(self.power) * self.gain);
             gl::Uniform1f(
                 p.u_colour_correct,
                 if self.colour_correct { 1.0 } else { 0.0 },

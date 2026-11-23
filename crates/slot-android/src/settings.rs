@@ -242,6 +242,20 @@ fn bezel_md_default() -> Bezel { Bezel::GenesisClassic }
 
 pub const REWIND_SPEEDS: [u8; 4] = [1, 2, 3, 5];
 
+/// BFI's lit-refresh brightness steps and dark-refresh levels, in percent.
+pub const BFI_BOOSTS: [u8; 11] = [100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200];
+pub const BFI_DARKS: [u8; 6] = [0, 10, 20, 30, 40, 50];
+
+/// The next (or previous) value of `list` after `at`, wrapping; the first
+/// for a value that isn't in it.
+fn step_in(list: &[u8], at: u8, right: bool) -> u8 {
+    let n = list.len();
+    match list.iter().position(|v| *v == at) {
+        Some(i) => list[if right { (i + 1) % n } else { (i + n - 1) % n }],
+        None => list[0],
+    }
+}
+
 /// Port: 1x means ten stored snapshots/sec, 2x (upstream feel) means twenty,
 /// and 5x means fifty. Upstream captures 30/s, not 10/s.
 /// Hold L2 continuously; the memory meter indicates occupied history, not progress.
@@ -422,6 +436,15 @@ pub struct Settings {
     /// PlayStation and TurboGrafx-CD overlays: off for existing installs,
     /// on for a fresh one (first_install_defaults) except on 3:2 screens.
     pub bezel_psx: Bezel, pub bezel_tgcd: Bezel,
+    /// Black Frame Insertion, on for the systems whose bit is set (by
+    /// Platform index); off everywhere by default.
+    pub bfi_systems: u16,
+    /// BFI: the lit refreshes' brightness, in percent (100..=200).
+    pub bfi_boost: u8,
+    /// BFI: the dark refreshes' brightness, in percent (0 black ..= 50).
+    pub bfi_dark: u8,
+    /// BFI: dark refreshes per game frame, 0 for the most the screen allows.
+    pub bfi_frames: u8,
     pub gb_palettes: bool, pub gb_palette: u8, pub rewind: bool,
     // Number of historical rewind snapshots restored per 100 ms of game time.
     // Prior Android builds captured 10/s and replayed 10/s (1x). Original
@@ -526,6 +549,7 @@ impl Default for Settings {
             bezel_gba: Bezel::None, bezel_gbc: Bezel::Default, bezel_gb: Bezel::Default,
             bezel_nes: Bezel::Nes, bezel_snes: Bezel::Snes, bezel_md: Bezel::GenesisClassic,
             bezel_psx: Bezel::None, bezel_tgcd: Bezel::None,
+            bfi_systems: 0, bfi_boost: 100, bfi_dark: 0, bfi_frames: 0,
             gb_palettes: false, gb_palette: 1, rewind: true,
             rewind_speed: 2,
             turbo: true, eject_save: true,
@@ -838,6 +862,24 @@ impl Settings {
             slot_store::Platform::Tgcd=>self.bezel_tgcd=value,
         }
     }
+    /// Whether Black Frame Insertion is on for this system.
+    pub fn bfi_for(&self, platform: slot_store::Platform) -> bool {
+        self.bfi_systems & (1u16 << (platform as u16 & 15)) != 0
+    }
+    pub fn set_bfi_for(&mut self, platform: slot_store::Platform, on: bool) {
+        let bit = 1u16 << (platform as u16 & 15);
+        if on { self.bfi_systems |= bit } else { self.bfi_systems &= !bit }
+    }
+    /// BFI's lit and dark brightness as picture gains, and how many of
+    /// `refreshes` (refreshes per game frame, 2 or more) are dark.
+    pub fn bfi_plan(&self, refreshes: u32) -> (f32, f32, u32) {
+        let boost = f32::from(self.bfi_boost.clamp(100, 200)) / 100.0;
+        let dark = f32::from(self.bfi_dark.min(50)) / 100.0;
+        let most = refreshes.saturating_sub(1).max(1);
+        let frames = if self.bfi_frames == 0 { most } else { u32::from(self.bfi_frames).min(most) };
+        (boost, dark, frames)
+    }
+
     /// The Bezel row's settings key for each system.
     pub fn bezel_key(platform:slot_store::Platform)->usize {
         match platform {
@@ -885,6 +927,10 @@ impl Settings {
             45 => self.step_bezel(slot_store::Platform::Snes,right),
             46 => self.step_bezel(slot_store::Platform::Md,right),
             72 => self.step_bezel(slot_store::Platform::Psx,right),
+            // Black Frame Insertion (80, on/off per system, is the runtime's).
+            81 => self.bfi_boost = step_in(&BFI_BOOSTS, self.bfi_boost, right),
+            82 => self.bfi_dark = step_in(&BFI_DARKS, self.bfi_dark, right),
+            83 => self.bfi_frames = step_in(&[0, 1, 2, 3], self.bfi_frames, right),
             75 => self.step_bezel(slot_store::Platform::Tgcd,right),
             47 => self.shader_nes=self.shader_nes.step(&Shader::HOME,right),
             48 => self.shader_snes=self.shader_snes.step(&Shader::HOME,right),

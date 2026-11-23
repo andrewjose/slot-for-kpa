@@ -155,6 +155,8 @@ class MainActivity : Activity() {
     external fun nativeAudioSampleRate(): Int
     // RETROARCH pacing: panel refresh (mHz) and AudioTrack fill for rate control.
     external fun nativeSetDisplayRefresh(millihz: Int)
+    external fun nativeSetMaxRefresh(millihz: Int)
+    external fun nativeHighRefreshWanted(): Boolean
     external fun nativeSetAudioOutputDepth(queuedFrames: Int, capacityFrames: Int)
     external fun nativeAudioQueuedShorts(): Int
     external fun nativeSetMgbaLinkRecoveryEnabled(enabled: Boolean)
@@ -364,6 +366,39 @@ class MainActivity : Activity() {
     private fun publishDisplayRefresh() {
         val hz = display?.refreshRate ?: 0f
         nativeSetDisplayRefresh(if (hz > 0f) (hz * 1000f).toInt() else 0)
+        // Black Frame Insertion is offered when the panel can go at least
+        // twice as fast as the game: its fastest mode at this resolution.
+        val fastest = fastestDisplayMode()?.refreshRate ?: 0f
+        nativeSetMaxRefresh(if (fastest > 0f) (fastest * 1000f).toInt() else 0)
+    }
+
+    private fun fastestDisplayMode(): android.view.Display.Mode? = try {
+        display?.let { d ->
+            val now = d.mode
+            d.supportedModes.filter {
+                it.physicalWidth == now.physicalWidth && it.physicalHeight == now.physicalHeight
+            }.maxByOrNull { it.refreshRate }
+        }
+    } catch (_: Exception) { null }
+
+    /** A game with Black Frame Insertion on asks Android for the panel's
+     *  fastest refresh (120Hz on a 120Hz screen); otherwise its default. */
+    private var highRefreshApplied = false
+    private fun updateRefreshPreference() {
+        val wanted = nativeHighRefreshWanted()
+        if (wanted == highRefreshApplied) return
+        highRefreshApplied = wanted
+        try {
+            val params = window.attributes
+            params.preferredDisplayModeId = if (wanted) fastestDisplayMode()?.modeId ?: 0 else 0
+            window.attributes = params
+            Log.i(TAG, "Display mode for Black Frame Insertion: ${if (wanted) "fastest" else "default"}")
+        } catch (error: Exception) {
+            Log.w(TAG, "Display mode unchanged", error)
+        }
+        // The pacing reads the new rate once the mode has switched.
+        uiHandler.postDelayed({ publishDisplayRefresh() }, 400L)
+        uiHandler.postDelayed({ publishDisplayRefresh() }, 1500L)
     }
     private fun updateDisplaySyncMode() {
         if (!::view.isInitialized) return
@@ -667,6 +702,7 @@ class MainActivity : Activity() {
             pollRumble()
             updateSensors()
             updateDisplaySyncMode()
+            updateRefreshPreference()
             updateCarouselPacing()
             publishAutoLabelsWhenIdle()
             val labelsPlaying = nativeIsPlaying()
