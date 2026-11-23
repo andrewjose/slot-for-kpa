@@ -597,3 +597,12 @@ fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
     assert_eq!(settings.shader_tgcd, crate::settings::Shader::ZfastCrt);
     assert_eq!(settings.shader_psx, crate::settings::Shader::Off, "its own shader");
 }
+
+#[test]
+fn motion_games_get_a_sensitivity_row() {
+    assert_eq!(MENU_TEXT[SENSITIVITY_TEXT], "Sensitivity");
+    // The row's value is the number 1 to 10.
+    for level in crate::emulation::MOTION_MIN..=crate::emulation::MOTION_MAX {
+        assert_eq!(SETTING_VALUE_NAMES[54 + usize::from(level)], level.to_string());
+    }
+}

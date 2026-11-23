@@ -185,7 +185,7 @@ class MainActivity : Activity() {
     external fun nativePollRumbleStrength(): Int
     external fun nativeSensorsAvailable(mask: Int)
     external fun nativeSensorsWanted(): Int
-    external fun nativeSensorEvent(sensor: Int, x: Float, y: Float, z: Float)
+    external fun nativeSensorEvent(sensor: Int, x: Float, y: Float, z: Float, timestampNs: Long)
     external fun nativeCoreForUri(uri: String): String
     external fun nativePollSaveFlush(): String?
     external fun nativeSetShareSaves(enabled: Boolean)
@@ -288,7 +288,9 @@ class MainActivity : Activity() {
         override fun onSensorChanged(event: SensorEvent) {
             val sensor = sensorTypes.firstOrNull { it.second == event.sensor.type }?.first ?: return
             val v = event.values
-            nativeSensorEvent(sensor, v[0], v.getOrElse(1) { 0f }, v.getOrElse(2) { 0f })
+            // Differentiate motion using the sample time, not the UI thread's
+            // delivery time: Android can deliver several readings together.
+            nativeSensorEvent(sensor, v[0], v.getOrElse(1) { 0f }, v.getOrElse(2) { 0f }, event.timestamp)
         }
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
     }

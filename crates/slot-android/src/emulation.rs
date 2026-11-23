@@ -37,6 +37,20 @@ pub struct EmulationProfile {
     pub blending_override: Option<Blending>,
     pub lcd_effect_override: Option<LcdEffect>,
     pub dither_override: Option<bool>,
+    // Tilt and gyro games' sensitivity, MOTION_MIN..=MOTION_MAX; None is
+    // MOTION_DEFAULT, the sensors as they read (upstream v2.3.0).
+    pub motion: Option<u8>,
+}
+
+pub const MOTION_MIN: u8 = 1;
+pub const MOTION_MAX: u8 = 10;
+pub const MOTION_DEFAULT: u8 = 5;
+/// How much a sensitivity level scales a tilt or a turn: 1.0 at the
+/// default, each step the same feel (x1.41 below it, x1.32 above), from
+/// 0.25 at 1 to 4.0 at 10.
+pub fn motion_factor(level: u8) -> f32 {
+    let steps = f32::from(level.clamp(MOTION_MIN, MOTION_MAX)) - f32::from(MOTION_DEFAULT);
+    2f32.powf(steps / if steps < 0.0 { 2.0 } else { 2.5 })
 }
 
 pub const SUN_SENSOR: u8 = 11;
@@ -117,7 +131,7 @@ impl EmulationProfile {
             ff_sound_override: None, rewind_override: None,
             rewind_speed_override: None,
             turbo_override: None, rumble_override: None,
-            eject_save_override: None, sun: None,
+            eject_save_override: None, sun: None, motion: None,
             blending_override: None, lcd_effect_override: None, dither_override: None }
     }
     /// Materialise the *current* game's per-ROM settings without mutating
@@ -211,7 +225,20 @@ impl EmulationProfile {
             self.ff_speed_override=None;
         }
         if self.sun.is_some_and(|sun| sun > SUN_AUTO) { self.sun = None; }
+        if self.motion.is_some_and(|m| !(MOTION_MIN..=MOTION_MAX).contains(&m)) {
+            self.motion = None;
+        }
         self
+    }
+    /// The game's motion sensitivity.
+    pub fn motion(&self) -> u8 {
+        self.motion.unwrap_or(MOTION_DEFAULT).clamp(MOTION_MIN, MOTION_MAX)
+    }
+    /// One step up or down, stopping at the ends.
+    pub fn change_motion(&mut self, up: bool) {
+        let level = self.motion();
+        self.motion = Some(if up { (level + 1).min(MOTION_MAX) }
+            else { level.saturating_sub(1).max(MOTION_MIN) });
     }
     pub fn change(&mut self, key: usize, right: bool) -> bool {
         let before = *self;
@@ -312,6 +339,23 @@ impl EmulationProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn motion_sensitivity_steps_between_its_ends() {
+        let mut profile = EmulationProfile::default();
+        assert_eq!(profile.motion(), MOTION_DEFAULT);
+        assert_eq!(motion_factor(profile.motion()), 1.0, "the default leaves the sensors alone");
+        profile.change_motion(true);
+        assert_eq!(profile.motion(), 6);
+        for _ in 0..10 { profile.change_motion(true); }
+        assert_eq!(profile.motion(), MOTION_MAX);
+        for _ in 0..20 { profile.change_motion(false); }
+        assert_eq!(profile.motion(), MOTION_MIN);
+        assert_eq!(motion_factor(MOTION_MIN), 0.25);
+        assert!((motion_factor(MOTION_MAX) - 4.0).abs() < 1e-5);
+        assert!((motion_factor(3) - 0.5).abs() < 1e-6);
+        assert_eq!(EmulationProfile { motion: Some(42), ..profile }.sanitize().motion, None);
+    }
+
     #[test]
     fn sun_follows_the_handheld_until_chosen() {
         let mut profile=EmulationProfile::default();

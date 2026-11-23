@@ -500,7 +500,7 @@ enum ShelfOverlay {
     CartLibrary,
 }
 
-const MENU_TEXT: [&str; 137] = [
+const MENU_TEXT: [&str; 138] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -638,7 +638,10 @@ const MENU_TEXT: [&str; 137] = [
     "Cheats",                             // 134, game menu (Siham 2026-11-09)
     "PlayStation",                        // 135
     "TurboGrafx-CD",                      // 136
+    "Sensitivity",                        // 137, tilt and gyro games (upstream v2.3.0)
 ];
+/// MENU_TEXT's Sensitivity row (tilt and gyro games).
+const SENSITIVITY_TEXT: usize = 137;
 
 /// In-game Screen keys that change the picture itself: the paused game's
 /// look is redone after them (each system's shader, palette, LCD Effect).
@@ -864,10 +867,21 @@ fn core_value(core: Core) -> usize {
 
 /// Pause Emulation's Sun row, drawn with the sun values, not a Settings key.
 const SUN_KEY: usize = 100;
+/// Pause Emulation's Sensitivity row (tilt and gyro games), drawn with the
+/// number values 1 to 10.
+const MOTION_KEY: usize = 102;
 /// The longest a core picker waits for a clear cart's lid before opening.
 const PICKER_LID_WAIT_MS: u64 = 600;
 /// Interface > Shelf's value: a shelf name, no Settings key.
 const SHELF_PICK_KEY: usize = 101;
+
+/// Hand a motion game's sensitivity to the sensors; every other game
+/// reads them as they are.
+fn apply_motion(game: Option<&GameSession>, level: u8) {
+    let motion = game.is_some_and(GameSession::motion);
+    slot_retro::sensors::set_sensitivity(
+        if motion { crate::emulation::motion_factor(level) } else { 1.0 });
+}
 
 fn light_sensor() -> bool {
     slot_retro::sensors::available() & slot_retro::sensors::ILLUMINANCE != 0
@@ -2286,6 +2300,10 @@ impl Engine {
             // Boktai's sun, like L3 / R3, for handhelds without stick clicks.
             104 | 105 if self.game.as_ref().is_some_and(GameSession::solar) => {
                 self.nudge_sun(code == 105);
+            }
+            // A tilt or gyro game's sensitivity, on the same keys.
+            104 | 105 if self.game.as_ref().is_some_and(GameSession::motion) => {
+                self.nudge_motion(code == 105);
             }
             // Also valid for GB-compatible .gbc ROMs (CGB flag bit 7 unset).
             104 | 105 if self.game_settings().gb_palettes
@@ -3808,6 +3826,8 @@ impl Engine {
                                 19 | 20 => self.overlay = ShelfOverlay::PauseEmulationSettings {
                                     row: move_menu_row(row, code, self.pause_emulation_rows().len()),
                                 },
+                                21 | 22 if row == 3 && self.game.as_ref().is_some_and(GameSession::motion) =>
+                                    self.change_game_motion(code == 22),
                                 21 | 22 if row == 3 => self.change_game_sun(code == 22),
                                 21 | 22 => self.change_game_emulation(row + 10, code == 22),
                                 97 => self.overlay = ShelfOverlay::PauseSettings { row: 2 },
@@ -3858,6 +3878,8 @@ impl Engine {
                     if code == 106 || code == 107 {
                         if pressed && self.game.as_ref().is_some_and(GameSession::solar) {
                             self.nudge_sun(code == 107);
+                        } else if pressed && self.game.as_ref().is_some_and(GameSession::motion) {
+                            self.nudge_motion(code == 107);
                         }
                         return;
                     }
@@ -5106,6 +5128,8 @@ impl Engine {
     fn pause_emulation_rows(&self) -> &'static [usize] {
         if self.game.as_ref().is_some_and(GameSession::solar) {
             &[51,52,55,119]
+        } else if self.game.as_ref().is_some_and(GameSession::motion) {
+            &[51,52,55,SENSITIVITY_TEXT]
         } else {
             &[51,52,55]
         }
@@ -5362,6 +5386,36 @@ impl Engine {
         }, time);
         self.save_game_sun(profile, &uri, core);
     }
+    fn change_game_motion(&mut self, up: bool) {
+        let Some(uri) = self.selected_rom_uri() else { return; };
+        let core = self.selected_emulation_core();
+        let mut profile = self.game_emulation
+            .unwrap_or_else(|| EmulationProfile::from_settings(&self.settings));
+        profile.change_motion(up);
+        self.save_game_motion(profile, &uri, core);
+    }
+    /// L3 / R3 (and SELECT + L2 / R2) in a tilt or gyro game, as for
+    /// Boktai's sun: one step of its sensitivity, with the banner.
+    fn nudge_motion(&mut self, up: bool) {
+        let Some(uri) = self.selected_rom_uri() else { return; };
+        let core = self.selected_emulation_core();
+        let mut profile = self.game_emulation
+            .unwrap_or_else(|| EmulationProfile::from_settings(&self.settings));
+        let time = self.born.elapsed().as_millis() as u64;
+        profile.change_motion(up);
+        self.hud.toast(Toast::Motion(profile.motion()), time);
+        self.save_game_motion(profile, &uri, core);
+    }
+    fn save_game_motion(&mut self, profile: EmulationProfile, uri: &str, core: Core) {
+        if let Some((root, _)) = PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            if let Err(error) = profile.save(root, uri, core) {
+                set_error_message("Couldn't save this game's settings.", &error);
+                return;
+            }
+        } else { return; }
+        self.game_emulation = Some(profile);
+        apply_motion(self.game.as_ref(), profile.motion());
+    }
     fn save_game_sun(&mut self, profile: EmulationProfile, uri: &str, core: Core) {
         if let Some((root, _)) = PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
             if let Err(error) = profile.save(root, uri, core) {
@@ -5391,6 +5445,7 @@ impl Engine {
         if let Some(session) = self.game.as_mut() {
             session.set_sun(crate::emulation::default_sun(light_sensor()));
         }
+        apply_motion(self.game.as_ref(), crate::emulation::MOTION_DEFAULT);
         let globals=self.game_settings();
         let platform=self.current_cart_platform();
         self.apply_game_look();
@@ -5870,7 +5925,9 @@ impl Engine {
     fn value_face(&self, key: usize) -> Option<(slot_gfx::TexId, u32, u32)> {
         // Only action rows (usize::MAX) have no value: setting_face
         // answers every other key, so a new key can't go blank.
-        Some(if key == SUN_KEY {
+        Some(if key == MOTION_KEY {
+                    self.setting_values[54 + usize::from(self.current_emulation().motion())]
+                } else if key == SUN_KEY {
                     let sun = self.current_emulation().sun(light_sensor(), self.sun_top());
                     self.setting_values[match sun {
                         crate::emulation::SUN_SENSOR => 53,
@@ -6337,9 +6394,11 @@ impl Engine {
                 // One value per visible row: an extra action sentinel
                 // displaced ALL value glyphs by half a row and
                 // desynchronised them from their carets.
-                let keys: &[usize] = if self.pause_emulation_rows().len() == 4 {
-                    &[10, 11, 12, SUN_KEY]
-                } else { &[10, 11, 12] };
+                let keys: &[usize] = if self.pause_emulation_rows().len() < 4 {
+                    &[10, 11, 12]
+                } else if self.game.as_ref().is_some_and(GameSession::motion) {
+                    &[10, 11, 12, MOTION_KEY]
+                } else { &[10, 11, 12, SUN_KEY] };
                 self.draw_settings_menu(50, self.pause_emulation_rows(), row, keys, out);
                 // Identify the selected core without changing Slot's menu
                 // layout or existing keycap typography.
@@ -7001,6 +7060,7 @@ impl Engine {
                     let mut session = session;
                     let top = session.sun_top();
                     session.set_sun(self.current_emulation().sun(light_sensor(), top));
+                    apply_motion(Some(&session), self.current_emulation().motion());
                     self.game = Some(session);
                     // Focus and Recents were persisted during core
                     // preparation; avoid synchronous IO/rebuilding the

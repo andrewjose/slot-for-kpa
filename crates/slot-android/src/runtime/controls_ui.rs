@@ -239,6 +239,8 @@ impl Engine {
             Action::SunDown | Action::SunUp => {
                 if !linked && self.game.as_ref().is_some_and(GameSession::solar) {
                     self.nudge_sun(action == Action::SunUp);
+                } else if !linked && self.game.as_ref().is_some_and(GameSession::motion) {
+                    self.nudge_motion(action == Action::SunUp);
                 }
             }
         }
