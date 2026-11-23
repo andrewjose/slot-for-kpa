@@ -3449,7 +3449,13 @@ impl Engine {
                     && self.custom_hotkey(code, pressed) { return; }
                 if code == 109 { self.select_physical = pressed; }
                 if self.select_slot_combo(code, pressed) { return; }
-                if matches!(code, 19 | 20) {
+                // Letting go of the held key always ends its repeat.
+                if !pressed && self.menu_held.is_some_and(|(held,_,_)|held==code) {
+                    self.menu_held=None;
+                }
+                // On the Search keyboard Left / Right and deleting (X, or A
+                // on DEL) repeat while held, as Up / Down do in every menu.
+                if matches!(code, 19 | 20) || self.keyboard_repeats(code) {
                     if !pressed {
                         if self.menu_held.is_some_and(|(held,_,_)|held==code) {
                             self.menu_held=None;
@@ -6679,7 +6685,8 @@ impl Engine {
     // in Slot-owned menus. Android key repeats are filtered at MainActivity.
     fn tick_menu_repeat(&mut self) {
         let Some((key,due,count))=self.menu_held else {return};
-        if matches!(self.overlay,ShelfOverlay::None) {
+        // A and X repeat only on the Search keyboard: never once it's closed.
+        if matches!(self.overlay,ShelfOverlay::None) || (matches!(key,96|99) && !self.keyboard_repeats(key)) {
             self.menu_held=None;
             return;
         }

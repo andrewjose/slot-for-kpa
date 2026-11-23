@@ -730,6 +730,18 @@ impl Engine {
         }
     }
 
+    /// A key that repeats while held on Cart Studio's Search keyboard:
+    /// Left and Right along the keys, and deleting (X, or A on DEL).
+    pub(super) fn keyboard_repeats(&self, code: i32) -> bool {
+        if !matches!(self.overlay, ShelfOverlay::CartStudio) { return false; }
+        let Some(search) = self.studio.as_ref().and_then(|s| s.search.as_ref()) else { return false };
+        match code {
+            21 | 22 | 99 => !search.on_results,
+            96 => !search.on_results && KEYS.get(search.key) == Some(&'<'),
+            _ => false,
+        }
+    }
+
     fn open_search(&mut self) {
         let Some(studio) = self.studio.as_mut() else { return };
         let root = PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(r, _)| r.clone());
