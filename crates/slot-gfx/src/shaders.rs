@@ -63,6 +63,11 @@ uniform vec4 u_rect;
 uniform vec2 u_fbo;
 uniform vec4 u_pic;
 varying vec2 v_uv;
+/* The CRT shaders' rows: a frame of more than 300 lines (PlayStation 480i,
+   SNES/Mega Drive interlaced) is two fields, so its scanlines keep the
+   240-line spacing and the look doesn't change when a game switches modes,
+   as crt-geom does upstream. Set at the top of main(). */
+vec2 crt_src;
 const vec3 offsets = vec3(3.141592654) * vec3(1.0 / 2.0, 1.0 / 2.0 - 2.0 / 3.0, 1.0 / 2.0 - 4.0 / 3.0);
 const vec3 luma_coeff = vec3(0.2126, 0.7152, 0.0722);
 float dot_weight(vec2 f, vec2 o, float bloom) {
@@ -243,7 +248,7 @@ vec3 fakelottes(vec2 uv) {
     vec3 res = pow(nearest_bilinear(uv), vec3(2.5));
     res *= fakelottes_mask(gl_FragCoord.xy*1.0001);
     // Its sine has no horizontal part at the defaults (SINE_COMP_A 0).
-    float sine = sin((uv.y - 0.25/u_src.y)*6.283*u_src.y);
+    float sine = sin((uv.y - 0.25/crt_src.y)*6.283*crt_src.y);
     res *= 0.95 + 0.40*sine;
     return pow(max(res, vec3(0.0)), vec3(1.0/2.2));
 }
@@ -262,10 +267,10 @@ vec3 aperture_blur(vec3 a, vec3 b, vec3 c, float dist, float rad) {
     return (a*w.x + b*w.y + c*w.z)/(w.x + w.y + w.z);
 }
 vec3 aperture_gaussian(vec2 co) {
-    vec2 dx = vec2(1.0/u_src.x, 0.0);
-    vec2 dy = vec2(0.0, 1.0/u_src.y);
-    vec2 pix = co*u_src;
-    vec2 tc = (floor(pix) + 0.5)/u_src;
+    vec2 dx = vec2(1.0/crt_src.x, 0.0);
+    vec2 dy = vec2(0.0, 1.0/crt_src.y);
+    vec2 pix = co*crt_src;
+    vec2 tc = (floor(pix) + 0.5)/crt_src;
     vec2 dist = (fract(pix) - 0.5)*-1.0;
     vec3 l0 = aperture_blur(aperture_tap(tc-dy-dx), aperture_tap(tc-dy), aperture_tap(tc-dy+dx), dist.x, 0.5);
     vec3 l1 = aperture_blur(aperture_tap(tc-dx), aperture_tap(tc), aperture_tap(tc+dx), dist.x, 0.5);
@@ -273,7 +278,7 @@ vec3 aperture_gaussian(vec2 co) {
     return aperture_blur(l0, l1, l2, dist.y, 0.5);
 }
 vec3 aperture_lanczos(vec2 co, float sharp) {
-    vec2 size = vec2(u_src.x*sharp, u_src.y);
+    vec2 size = vec2(crt_src.x*sharp, crt_src.y);
     vec2 dx = vec2(1.0/size.x, 0.0);
     vec2 pix = co*size - vec2(0.5, 0.0);
     vec2 tc = (floor(pix) + vec2(0.5, 0.0))/size;
@@ -288,10 +293,10 @@ vec3 aperture_lanczos(vec2 co, float sharp) {
 }
 vec3 crt_aperture(vec2 uv) {
     // Screen pixels per source row (crt_out_px().y, defined further down).
-    float scale = floor((u_rect.w*u_fbo.y)/(u_uv.w*u_src.y) + 0.001);
+    float scale = floor((u_rect.w*u_fbo.y)/(u_uv.w*crt_src.y) + 0.001);
     float offset = 1.0/scale*0.5;
     if (mod(scale, 2.0) > 0.5) offset = 0.0;
-    vec2 co = (uv*u_src - vec2(0.0, offset))/u_src;
+    vec2 co = (uv*crt_src - vec2(0.0, offset))/crt_src;
     vec3 glow = aperture_gaussian(co);
     vec3 soft = aperture_lanczos(co, 1.0);
     vec3 sharp = aperture_lanczos(co, 3.0);
@@ -300,7 +305,7 @@ vec3 crt_aperture(vec2 uv) {
     vec3 beam = mix(vec3(0.5), vec3(1.5), pow(soft, vec3(1.0/1.5)));
     vec3 xm = 2.0/beam;
     vec3 xo = xm*0.5;
-    col *= smoothstep(0.0, 1.0, 1.0 - abs(fract(co.y*u_src.y)*xm - xo))*xo;
+    col *= smoothstep(0.0, 1.0, 1.0 - abs(fract(co.y*crt_src.y)*xm - xo))*xo;
     glow = clamp(glow - col, 0.0, 1.0);
     col += glow*glow*0.1;
     // Two-colour aperture grille, one screen pixel per stripe, strength 0.3.
@@ -332,7 +337,7 @@ vec3 gdv_tap(vec2 at) {
 }
 vec3 gdv_glow(vec2 tc) {
     // Upstream squares nothing here (its "c*c;" lines are no-ops).
-    vec2 b = vec2(1.0)/u_src;
+    vec2 b = vec2(1.0)/crt_src;
     vec3 c11 = gdv_tap(tc);
     vec3 ring1 = gdv_tap(tc+vec2(-b.x,0.0)) + gdv_tap(tc+vec2(b.x,0.0))
         + gdv_tap(tc+vec2(-b.x,-b.y)) + gdv_tap(tc+vec2(b.x,b.y))
@@ -355,8 +360,8 @@ vec3 gdv_saturation(vec3 c) {
 vec3 crt_gdv_mini_ultra(vec2 uv) {
     // guest(r) + Dr. Venom crt-gdv-mini-ultra, Trinitron preset defaults,
     // CurvatureX/Y 0 (Siham 2026-11-04).
-    vec2 ps = vec2(1.0)/u_src;
-    vec2 at = uv*u_src;
+    vec2 ps = vec2(1.0)/crt_src;
+    vec2 at = uv*crt_src;
     vec2 fp = fract(at);
     vec2 pc = floor(at)*ps + 0.5*ps;
     vec3 ul = gdv_tap(pc);
@@ -375,7 +380,7 @@ vec3 crt_gdv_mini_ultra(vec2 uv) {
     c1 *= mix(mask, vec3(1.0), l1*0.4);
     c2 *= mix(mask, vec3(1.0), l2*0.4);
     vec3 c = c1*gdv_sw(fp.y,l1) + c2*gdv_sw(1.0-fp.y,l2);
-    if (u_src.y >= 400.0) c = (c1+c2)/2.0;
+    if (crt_src.y >= 400.0) c = (c1+c2)/2.0;
     c = min(c, 1.0);
     float lum = dot(c, vec3(0.3,0.6,0.1));
     c = pow(max(c,vec3(0.0)), vec3(1.0/2.2));
@@ -678,9 +683,9 @@ vec3 em_row(vec2 co, vec2 dx, vec4 k) {
     return clamp(col, min(b, c), max(b, c));
 }
 vec3 crt_easymode(vec2 uv) {
-    vec2 dx = vec2(1.0 / u_src.x, 0.0), dy = vec2(0.0, 1.0 / u_src.y);
-    vec2 pc = uv * u_src - 0.5;
-    vec2 tc = (floor(pc) + 0.5) / u_src;
+    vec2 dx = vec2(1.0 / crt_src.x, 0.0), dy = vec2(0.0, 1.0 / crt_src.y);
+    vec2 pc = uv * crt_src - 0.5;
+    vec2 tc = (floor(pc) + 0.5) / crt_src;
     vec2 dist = fract(pc);
     float cx = em_curve(dist.x, 0.25);
     vec4 k = HPI * vec4(1.0 + cx, cx, 1.0 - cx, 2.0 - cx);
@@ -694,11 +699,11 @@ vec3 crt_easymode(vec2 uv) {
     float bright = (max(col.r, max(col.g, col.b)) + luma) * 0.5;
     float sbright = clamp(bright, 0.35, 0.65);
     float sbeam = clamp(bright * 1.5, 1.5, 1.5);
-    float sw = 1.0 - pow(cos(uv.y * 2.0 * HPI * u_src.y) * 0.5 + 0.5, sbeam);
+    float sw = 1.0 - pow(cos(uv.y * 2.0 * HPI * crt_src.y) * 0.5 + 0.5, sbeam);
     float m = 1.0 - 0.3;
     float dot_no = mod(floor(v_uv.x * h_out().x), 3.0);
     vec3 mw = dot_no < 0.5 ? vec3(1.0, m, m) : (dot_no < 1.5 ? vec3(m, 1.0, m) : vec3(m, m, 1.0));
-    if (u_src.y >= 400.0) sw = 1.0;
+    if (crt_src.y >= 400.0) sw = 1.0;
     col2 = col;
     col *= sw;
     col = mix(col, col2, sbright);
@@ -716,9 +721,9 @@ vec3 crt_hyllian(vec2 uv) {
                      (-3.0*B - 6.0*C)/6.0, 0.0, (3.0*B + 6.0*C)/6.0, 0.0,
                      B/6.0, (6.0 - 2.0*B)/6.0, B/6.0, 0.0);
     vec4 prof = vec4(0.58, 0.86, 1.0, 1.25);
-    vec2 dx = vec2(1.0 / u_src.x, 0.0), dy = vec2(0.0, 1.0 / u_src.y);
-    vec2 pc = uv * u_src + vec2(-0.5, 0.5);
-    vec2 tc = (floor(pc) + 0.5) / u_src;
+    vec2 dx = vec2(1.0 / crt_src.x, 0.0), dy = vec2(0.0, 1.0 / crt_src.y);
+    vec2 pc = uv * crt_src + vec2(-0.5, 0.5);
+    vec2 tc = (floor(pc) + 0.5) / crt_src;
     vec2 fp = fract(pc);
     vec4 c00 = hy_in(tc - dx - dy), c01 = hy_in(tc - dy), c02 = hy_in(tc + dx - dy), c03 = hy_in(tc + 2.0*dx - dy);
     vec4 c10 = hy_in(tc - dx), c11 = hy_in(tc), c12 = hy_in(tc + dx), c13 = hy_in(tc + 2.0*dx);
@@ -913,6 +918,7 @@ vec3 xbr_lv2(vec2 uv) {
     return mix(r1, r2, step(s_cdf(E, r1), s_cdf(E, r2)));
 }
 void main() {
+    crt_src = u_src.y > 300.0 ? vec2(u_src.x, u_src.y*0.5) : u_src;
     vec2 uv = u_uv.xy + v_uv * u_uv.zw;
     vec2 f = fract(uv * u_src);
     vec3 c;
@@ -954,23 +960,23 @@ void main() {
         c = crt_gdv_mini_ultra(uv);
     } else if (u_mode > 13.5) {
         // davej crt-pi defaults: scanlines, multisample, gamma, mask 1.
-        vec2 tp = uv*u_src;
+        vec2 tp = uv*crt_src;
         float ty = floor(tp.y)+0.5;
         float dy = tp.y-ty;
-        float fw = (1.0/crt_out_px().y)/3.0;
+        float fw = (1.0/((u_rect.w*u_fbo.y)/(u_uv.w*crt_src.y)))/3.0;
         float sw = (crtpi_weight(dy)+crtpi_weight(dy-fw)+crtpi_weight(dy+fw))*0.3333333;
         float sy = sign(dy);
-        dy = dy*dy; dy = dy*dy; dy *= 8.0; dy /= u_src.y; dy *= sy;
-        vec3 col = nearest_bilinear(vec2(uv.x, ty/u_src.y + dy));
+        dy = dy*dy; dy = dy*dy; dy *= 8.0; dy /= crt_src.y; dy *= sy;
+        vec3 col = nearest_bilinear(vec2(uv.x, ty/crt_src.y + dy));
         col = pow(col, vec3(2.4))*sw*1.5;
         col = pow(col, vec3(1.0/2.2));
         c = col*(fract(gl_FragCoord.x*0.5) < 0.5 ? vec3(0.7,1.0,0.7) : vec3(1.0,0.7,1.0));
     } else if (u_mode > 12.5) {
         // SoltanGris42 zfast_crt_standard, RetroArch's parameter defaults.
-        vec2 p = uv*u_src;
+        vec2 p = uv*crt_src;
         vec2 i = floor(p)+0.5;
         vec2 ff = p-i;
-        p = (i+4.0*ff*ff*ff)/u_src;
+        p = (i+4.0*ff*ff*ff)/crt_src;
         p.x = mix(p.x, uv.x, 0.30);
         float yy1 = ff.y*ff.y;
         float yy2 = yy1*yy1;
