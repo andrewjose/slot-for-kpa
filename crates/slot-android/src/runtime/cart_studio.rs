@@ -20,12 +20,15 @@ const BACKGROUNDS: [(&str, Option<f32>); 9] = [
 /// "Original" is the finish the real cart had in the chosen colour.
 const FINISHES: [&str; 5] = ["Original", "Solid", "Clear", "Solid glitter", "Clear glitter"];
 const FINISH_OF: [Finish; 4] = [Finish::Solid, Finish::Translucent, Finish::SolidGlitter, Finish::ClearGlitter];
-const ROWS: [&str; 5] = ["Label", "Background", "Colour", "Finish", "Shape"];
+const ROWS: [&str; 6] = ["Label", "Background", "Colour", "Finish", "Shape", "File name"];
 const ROW_LABEL: usize = 0;
 const ROW_BACKGROUND: usize = 1;
 const ROW_COLOUR: usize = 2;
 const ROW_FINISH: usize = 3;
 const ROW_SHAPE: usize = 4;
+/// The cart's file name on a dark band across its label: on by default for a
+/// label borrowed from another game, off once the player picks a label.
+const ROW_NAME: usize = 5;
 /// The rows start higher than a settings page's: the finish strip goes under.
 const ROWS_TOP: f32 = 84.0;
 const STRIP_BOTTOM: f32 = 414.0;
@@ -107,10 +110,14 @@ pub(super) struct Outcome {
     pub(super) label: Option<Vec<u8>>,
     /// A new shell choice to save (None in it: the automatic shell).
     pub(super) shell: Option<Option<ShellChoice>>,
+    /// The file name band turned on or off (Labels/<key>.title).
+    pub(super) name_band: Option<bool>,
 }
 
 impl Outcome {
-    pub(super) fn is_empty(&self) -> bool { self.label.is_none() && self.shell.is_none() }
+    pub(super) fn is_empty(&self) -> bool {
+        self.label.is_none() && self.shell.is_none() && self.name_band.is_none()
+    }
 }
 
 /// A Cart Studio session: the cart as opened, and the choice on each row.
@@ -148,6 +155,10 @@ pub(super) struct Studio {
     stale: bool,
     /// Opened from the library page: B and A go back there.
     from_library: bool,
+    /// The file name band: shown now, as opened, and set on its row.
+    name_band: bool,
+    name_band_start: bool,
+    name_touched: bool,
 }
 
 fn outlines(platform: Platform) -> Vec<(&'static str, Outline)> {
@@ -387,17 +398,37 @@ impl Studio {
         let fun_start = colours.len();
         colours.extend(slot_ui::FUN_SWATCHES.iter().map(|w| Colour { name: w.name.into(), shell: Some(w.shell) }));
         let pending_label = pending_label.and_then(|png| slot_ui::decode_png(&png).map(|rgba| (png, rgba)));
+        let name_band = cart.label.as_deref().is_some_and(slot_ui::borrowed_label);
         Studio {
             uri, original: cart, auto, stored, row: 0, label: 0, background: 0,
             colour: start.0, finish: start.1, outline: start.2, start, colours, fun_start, pending_label,
             real_png: None, real: None, logo: None, waiting: true, alt: None, picture: None, search: None,
             chart: None, preview: None, minis: Minis::default(), stale: true, from_library,
+            name_band, name_band_start: name_band, name_touched: false,
         }
+    }
+
+    /// A label chosen on the Label row or picked: the file name band goes
+    /// with the borrowed label it came with, unless set on its own row.
+    fn label_chosen(&mut self) {
+        if !self.name_touched { self.name_band = self.label == 0 && self.name_band_start; }
+    }
+
+    /// The label as the cart will wear it: the chosen art, or the label
+    /// file, with the file name band when its row says so.
+    fn shown_art(&self, cart: &Cart) -> Option<Vec<u8>> {
+        let mut art = self.label_art(cart).0.map(|(rgba, _, _)| rgba)
+            .or_else(|| (self.label == 0 && self.pending_label.is_none()).then(|| slot_ui::label_file_art(cart)).flatten())?;
+        if self.name_band { slot_ui::label_name_band(cart, &mut art); }
+        Some(art)
     }
 
     /// The rows this cart has: Shape only when its system has several.
     fn rows(&self) -> Vec<usize> {
-        let mut rows = vec![ROW_LABEL, ROW_BACKGROUND, ROW_COLOUR, ROW_FINISH];
+        // Background only means something for a logo label: elsewhere its
+        // place holds File name (the page has room for five rows).
+        let second = if self.shown_logo().is_some() { ROW_BACKGROUND } else { ROW_NAME };
+        let mut rows = vec![ROW_LABEL, second, ROW_COLOUR, ROW_FINISH];
         if outlines(self.original.platform).len() > 1 { rows.push(ROW_SHAPE); }
         rows
     }
@@ -517,7 +548,8 @@ impl Studio {
             _ => None,
         };
         let shell = self.shell_changed().then(|| self.choice(self.colour, self.finish, self.outline));
-        Outcome { label, shell }
+        let name_band = (self.name_band != self.name_band_start).then_some(self.name_band);
+        Outcome { label, shell, name_band }
     }
 
     fn value(&self, row: usize) -> (String, bool) {
@@ -527,6 +559,7 @@ impl Studio {
                 else { ("—".to_owned(), false) },
             ROW_COLOUR => (self.colours.get(self.colour).map_or_else(String::new, |c| c.name.clone()), true),
             ROW_FINISH => (FINISHES[self.finish].to_owned(), true),
+            ROW_NAME => ((if self.name_band { "Shown" } else { "Hidden" }).to_owned(), true),
             _ => {
                 let list = outlines(self.original.platform);
                 (list[self.outline.min(list.len() - 1)].0.to_owned(), true)
@@ -537,7 +570,8 @@ impl Studio {
     fn cycle(&mut self, right: bool) {
         let step = |v: usize, n: usize| if right { (v + 1) % n } else { (v + n - 1) % n };
         match self.row_id() {
-            ROW_LABEL => self.label = step(self.label, LABELS.len()),
+            ROW_LABEL => { self.label = step(self.label, LABELS.len()); self.label_chosen(); }
+            ROW_NAME => { self.name_band = !self.name_band; self.name_touched = true; }
             ROW_BACKGROUND if self.shown_logo().is_some() => self.background = step(self.background, BACKGROUNDS.len()),
             ROW_COLOUR => self.colour = step(self.colour, self.colours.len()),
             ROW_FINISH => self.finish = step(self.finish, FINISHES.len()),
@@ -663,6 +697,7 @@ impl Engine {
                 studio.alt = Some(Alt { name, real_png: real.filter(|_| decoded.is_some()), real: decoded,
                     logo: decode(&logo) });
                 studio.label = SEARCH_LABEL;
+                studio.label_chosen();
             }
             2 => {
                 let transparent = real.is_none();
@@ -672,6 +707,7 @@ impl Engine {
                     }
                 }
                 studio.label = PICTURE_LABEL;
+                studio.label_chosen();
             }
             _ => {
                 studio.real = decode(&real);
@@ -710,6 +746,7 @@ impl Engine {
             100 => {
                 studio.label = 0; studio.background = 0;
                 (studio.colour, studio.finish, studio.outline) = studio.start;
+                studio.name_band = studio.name_band_start; studio.name_touched = false;
                 studio.stale = true;
             }
             96 if studio.row_id() == ROW_LABEL && studio.label == SEARCH_LABEL => self.open_search(),
@@ -819,7 +856,7 @@ impl Engine {
         if studio.from_library && self.cart_library.is_some() {
             let outcome = studio.outcome();
             let cart = studio.draft_cart();
-            let art = studio.label_art(&cart).0.map(|(rgba, _, _)| rgba);
+            let art = studio.shown_art(&cart);
             if !outcome.is_empty() {
                 let face = slot_ui::cart_face_with_material(&cart, art);
                 self.keep_library_draft(cart, outcome, &face);
@@ -846,6 +883,21 @@ impl Engine {
         if let Some(png) = &outcome.label {
             if let Err(error) = slot_store::atomic_write(&root.join("Labels").join(format!("{key}.png")), png) {
                 set_error_message("Couldn't save the label.", &error);
+                ok = false;
+            }
+        }
+        if let Some(on) = outcome.name_band {
+            let marker = root.join("Labels").join(format!("{key}.title"));
+            let result = if on {
+                std::fs::create_dir_all(root.join("Labels")).and_then(|_| std::fs::write(&marker, b""))
+            } else {
+                match std::fs::remove_file(&marker) {
+                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                    _ => Ok(()),
+                }
+            };
+            if let Err(error) = result {
+                set_error_message("Couldn't save the file name setting.", &error);
                 ok = false;
             }
         }
@@ -928,7 +980,8 @@ impl Engine {
             }
         }
         let cart = studio.draft_cart();
-        let (art, note) = studio.label_art(&cart);
+        let note = studio.label_art(&cart).1;
+        let art = studio.shown_art(&cart);
         if let Some(note) = note { texts.push((note, false)); }
         if let Some(search) = &studio.search {
             texts.push(("SEARCH GAME".to_owned(), true));
@@ -951,7 +1004,7 @@ impl Engine {
         }
         self.prepare_minis(wanted);
         if !stale { return; }
-        let face = slot_ui::cart_face_with_material(&cart, art.map(|(rgba, _, _)| rgba));
+        let face = slot_ui::cart_face_with_material(&cart, art);
         let (w, h) = slot_ui::cart_box_for(&cart);
         let studio = self.studio.as_mut().expect("checked above");
         studio.preview = Some(match studio.preview {
