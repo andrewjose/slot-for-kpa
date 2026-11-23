@@ -54,6 +54,8 @@ internal object HomeCartLabels {
     internal data class Rom(
         val uri: String, val platform: String, val title: String, val filename: String,
         val size: Long, val modified: Long, val region: String, val maker: String,
+        /** The title in the ROM's own header (SNES, Mega Drive), for guesses. */
+        val headerTitle: String = "",
     )
 
     internal data class Media(val type: String, val region: String, val url: String)
@@ -175,7 +177,8 @@ internal object HomeCartLabels {
             if (platform !in Systems.HOME_PLATFORMS || !uri.startsWith("content://")) return@mapNotNull null
             Rom(uri, platform, row.optString("title"), row.optString("filename"),
                 row.optLong("size", -1), row.optLong("modified", -1),
-                row.optString("home_region"), row.optString("home_maker"))
+                row.optString("home_region"), row.optString("home_maker"),
+                row.optString("home_title"))
         }
     }
 
@@ -512,7 +515,6 @@ internal object HomeCartLabels {
      */
     fun announce(context: Context) {
         try {
-            credentials() ?: return
             if (android.os.SystemClock.elapsedRealtime() < closedUntil) return
             val (all, missing) = missingOf(context, state(context), realDone(context))
             if (missing.isEmpty()) return
@@ -523,8 +525,39 @@ internal object HomeCartLabels {
         }
     }
 
+    /**
+     * A cart nothing knows by its checksums (a hack, a translation, a renamed
+     * dump): the label of the game it most likely is, from our own set, by its
+     * name and header title (CartGuess). Null when nothing is close enough;
+     * `unavailable` when the official names couldn't be had (retry later).
+     */
+    private var guessUnavailable = false
+    internal fun guessLabel(context: Context, rom: Rom, crcs: List<String>,
+                            shouldContinue: () -> Boolean): Pair<Media, ByteArray>? {
+        guessUnavailable = false
+        val region = when (rom.region) { "U" -> "USA"; "E" -> "EUROPE"; "J" -> "JAPAN"; else -> null }
+        val picks = try {
+            CartGuess.candidates(context, rom.platform, rom.filename.ifBlank { rom.title }, null,
+                listOf(rom.headerTitle), region, shouldContinue)
+        } catch (error: Exception) {
+            Log.w(TAG, "Guess unavailable for ${rom.title.take(60)}", error); null
+        }
+        if (picks == null) { guessUnavailable = true; return null }
+        for ((_, crc) in picks) {
+            if (!shouldContinue()) return null
+            if (crc in crcs) continue
+            val found = try { ownLabel(context, rom, listOf(crc)) } catch (error: Exception) {
+                Log.w(TAG, "Own art set lookup failed for a guess", error); null
+            }
+            if (found != null) return found
+        }
+        return null
+    }
+
     fun fill(context: Context, shouldContinue: () -> Boolean, onSaved: (String) -> Unit): Boolean {
-        val creds = credentials() ?: return false
+        // Without ScreenScraper's keys (a fork's build) our own set and the
+        // guesses still label the carts; only ScreenScraper is skipped.
+        val creds = credentials()
         val now = android.os.SystemClock.elapsedRealtime()
         if (now < closedUntil || !shouldContinue()) return false
         val state = state(context)
@@ -569,7 +602,17 @@ internal object HomeCartLabels {
                     catch (error: Exception) { Log.w(TAG, "Own art set lookup failed", error); null }
                 var media: Media? = own?.first
                 var imageBytes: ByteArray? = own?.second
-                if (own == null) {
+                val sums = listOfNotNull(whole, bare).distinct()
+                if (own == null && creds == null) {
+                    val guess = guessLabel(context, rom, sums, shouldContinue)
+                    if (guess == null) {
+                        outcome = if (!shouldContinue()) "INTERRUPTED"
+                            else if (guessUnavailable) "NETWORK_ERROR" else "NOT_FOUND"
+                        continue
+                    }
+                    media = guess.first
+                    imageBytes = guess.second
+                } else if (own == null && creds != null) {
                     asks++
                     asked = true
                     var reply: Http? = null
@@ -581,9 +624,18 @@ internal object HomeCartLabels {
                     }
                     if (!shouldContinue()) { outcome = "INTERRUPTED"; break }
                     val answer = reply ?: continue
-                    when (answer.code) {
+                    if (answer.code == 404) {
+                        // ScreenScraper doesn't know the dump either: the game
+                        // it most likely is, from our own set.
+                        val guess = guessLabel(context, rom, sums, shouldContinue)
+                        if (guess == null) {
+                            outcome = if (guessUnavailable) "NETWORK_ERROR" else "NOT_FOUND"
+                            continue
+                        }
+                        media = guess.first
+                        imageBytes = guess.second
+                    } else when (answer.code) {
                         200 -> {}
-                        404 -> { outcome = "NOT_FOUND"; continue }
                         400, 401, 403, 423, 426 -> {
                             // Refused credentials or a closed API: stop for an hour.
                             closedUntil = android.os.SystemClock.elapsedRealtime() + 3_600_000L
@@ -593,13 +645,15 @@ internal object HomeCartLabels {
                         }
                         else -> { outcome = "NETWORK_ERROR"; continue }
                     }
-                    val json = JSONObject(String(answer.body, Charsets.UTF_8))
-                    val picked = pick(medias(json), rom) ?: continue
-                    Thread.sleep(100L)
-                    val image = get(picked.url, MAX_IMAGE, shouldContinue)
-                    if (image.code != 200) { outcome = "NETWORK_ERROR"; continue }
-                    media = picked
-                    imageBytes = image.body
+                    if (media == null) {
+                        val json = JSONObject(String(answer.body, Charsets.UTF_8))
+                        val picked = pick(medias(json), rom) ?: continue
+                        Thread.sleep(100L)
+                        val image = get(picked.url, MAX_IMAGE, shouldContinue)
+                        if (image.code != 200) { outcome = "NETWORK_ERROR"; continue }
+                        media = picked
+                        imageBytes = image.body
+                    }
                 }
                 val chosen = media ?: continue
                 val png = labelPng(imageBytes ?: continue, chosen, rom) ?: continue
