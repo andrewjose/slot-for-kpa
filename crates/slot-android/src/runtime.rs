@@ -258,6 +258,22 @@ static SAMPLE_RATE: AtomicI32 = AtomicI32::new(0);
 // RETROARCH pacing inputs from Kotlin: the panel refresh rate (mHz) and the
 // AudioTrack queue depth/capacity in frames, sampled by the audio worker.
 static DISPLAY_REFRESH_MILLIHZ: AtomicI32 = AtomicI32::new(0);
+/// The fastest refresh the panel offers, in mHz (0 = unknown): Black Frame
+/// Insertion is offered when it is at least twice the game's.
+static MAX_REFRESH_MILLIHZ: AtomicI32 = AtomicI32::new(0);
+/// A game with Black Frame Insertion on is running: Android is asked for
+/// the panel's fastest refresh (and its default again otherwise).
+static HIGH_REFRESH_WANTED: AtomicBool = AtomicBool::new(false);
+
+/// Black Frame Insertion's refreshes per game frame at `display_hz`: the
+/// whole ratio (2 at 120Hz for a 60fps game, 4 at 240Hz) when the panel can
+/// clock the game at it, None otherwise (a 60Hz screen, a PAL game at 120Hz).
+fn bfi_refreshes(display_hz: f64, fps: f64) -> Option<u32> {
+    if !(display_hz > 0.0 && fps > 0.0) { return None; }
+    let n = (display_hz / fps).round();
+    if !(2.0..=8.0).contains(&n) { return None; }
+    crate::ra_sync::display_can_clock_core(display_hz / n, fps).then_some(n as u32)
+}
 static AUDIO_OUT_QUEUED_FRAMES: AtomicI32 = AtomicI32::new(0);
 static AUDIO_OUT_CAPACITY_FRAMES: AtomicI32 = AtomicI32::new(0);
 static DISPLAY_SYNC: AtomicBool = AtomicBool::new(false);
@@ -488,6 +504,8 @@ enum ShelfOverlay {
     PauseScreenSettings { row: usize },
     PauseGameplaySettings { row: usize },
     PauseEmulationSettings { row: usize },
+    /// Black Frame Insertion, from the paused game's Settings.
+    PauseBfiSettings { row: usize },
     About { row: usize },
     Core,
     GameMenu { row: usize },
@@ -500,7 +518,7 @@ enum ShelfOverlay {
     CartLibrary,
 }
 
-const MENU_TEXT: [&str; 138] = [
+const MENU_TEXT: [&str; 143] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -639,7 +657,17 @@ const MENU_TEXT: [&str; 138] = [
     "PlayStation",                        // 135
     "TurboGrafx-CD",                      // 136
     "Change Disc",                        // 137, multi-disc games' Settings
+    "Black Frames",                       // 138, BFI (game Settings, its row)
+    "BLACK FRAMES",                       // 139, its page
+    "Brightness",                         // 140, lit refreshes
+    "Dark Level",                         // 141, dark refreshes
+    "Dark Frames",                        // 142, dark refreshes per frame
 ];
+
+/// Black Frame Insertion's page: on/off for this system, then the lit
+/// refreshes' brightness, the dark ones' level and how many are dark.
+const BFI_ROWS: [usize; 4] = [138, 140, 141, 142];
+const BFI_KEYS: [usize; 4] = [80, 81, 82, 83];
 
 /// In-game Screen keys that change the picture itself: the paused game's
 /// look is redone after them (each system's shader, palette, LCD Effect).
@@ -658,7 +686,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 119] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 136] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -688,7 +716,12 @@ const SETTING_VALUE_NAMES: [&str; 119] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "Pixel Transparency", "Sunlight Shimmer",
                                "Dot Matrix Color",
                                "PCSX-ReARMed", "Beetle PCE Fast",
-                               "PLAYSTATION", "TURBOGRAFX-16", "PC ENGINE"];
+                               "PLAYSTATION", "TURBOGRAFX-16", "PC ENGINE",
+                               // 119: BFI Brightness, 100% to 200%.
+                               "100%", "110%", "120%", "130%", "140%", "150%",
+                               "160%", "170%", "180%", "190%", "200%",
+                               // 130: BFI Dark Level, BLACK then 10% to 50%.
+                               "BLACK", "10%", "20%", "30%", "40%", "50%"];
 
 /// The value face (an index in SETTING_VALUE_NAMES) a Settings key shows,
 /// None for an action-only row. Every key a menu lists must have one: the
@@ -785,6 +818,11 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         45 => bezel_value(scoped.bezel_snes),
         46 => bezel_value(scoped.bezel_md),
         72 => bezel_value(scoped.bezel_psx),
+        // Black Frame Insertion: global, its on/off per system.
+        80 => if settings.bfi_for(cart) {4} else {5},
+        81 => 119 + usize::from((settings.bfi_boost.clamp(100, 200) - 100) / 10),
+        82 => 130 + usize::from(settings.bfi_dark.min(50) / 10),
+        83 => if settings.bfi_frames == 0 { 66 } else { 54 + usize::from(settings.bfi_frames.min(3)) },
         75 => bezel_value(scoped.bezel_tgcd),
         SCREEN_SIZE_KEY => SCREEN_SIZE_VALUE + match video {
             VideoMode::Actual => 0, VideoMode::Aspect => 1, VideoMode::Stretch => 2,
@@ -1064,6 +1102,10 @@ struct Engine {
     ra_resampler: crate::ra_sync::Resampler,
     ra_resampled: Vec<i16>,
     ra_adjust: f64,
+    /// Black Frame Insertion: refreshes counted since it began, and the
+    /// picture gain chosen for this refresh (1.0 when off).
+    bfi_phase: u64,
+    bfi_gain: f32,
     /// RETROARCH mode's automatic Frame Delay; `frame_delay_used_ns` is the
     /// wait applied in this callback.
     frame_delay: crate::ra_sync::FrameDelay,
@@ -1746,6 +1788,8 @@ impl Engine {
             ra_resampler: crate::ra_sync::Resampler::default(),
             ra_resampled: Vec::with_capacity(4096),
             ra_adjust: 1.0,
+            bfi_phase: 0,
+            bfi_gain: 1.0,
             frame_delay: crate::ra_sync::FrameDelay::default(),
             frame_delay_used_ns: None,
             perf_last: now,
@@ -2064,7 +2108,7 @@ impl Engine {
                     | ShelfOverlay::PauseSettings { .. }
                     | ShelfOverlay::PauseScreenSettings { .. }
                     | ShelfOverlay::PauseGameplaySettings { .. }
-                    | ShelfOverlay::PauseEmulationSettings { .. }
+                    | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. }
                     | ShelfOverlay::LayoutPorts { game: true, .. }
                     | ShelfOverlay::LayoutPort { game: true, .. }
                     | ShelfOverlay::Cheats { .. }
@@ -3731,7 +3775,7 @@ impl Engine {
                 if self.game.is_some() && matches!(self.overlay, ShelfOverlay::PauseSettings { .. }
                     | ShelfOverlay::PauseScreenSettings { .. }
                     | ShelfOverlay::PauseGameplaySettings { .. }
-                    | ShelfOverlay::PauseEmulationSettings { .. }
+                    | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. }
                     | ShelfOverlay::LayoutPorts { game: true, .. }
                     | ShelfOverlay::LayoutPort { game: true, .. }) {
                     // The Screen hotkey (Hotkey + Y) again on the Screen
@@ -3763,9 +3807,13 @@ impl Engine {
                                         3 if !linked => Self::layout_entry(self.current_cart_platform(), true),
                                         4 if !linked => {self.reset_game_emulation();
                                             ShelfOverlay::PauseSettings { row }},
-                                        5 if !linked => {self.change_disc();
-                                            if matches!(self.overlay, ShelfOverlay::None) { ShelfOverlay::None }
-                                            else { ShelfOverlay::PauseSettings { row } }},
+                                        5 | 6 if !linked => match self.pause_settings_rows().get(row) {
+                                            Some(137) => {self.change_disc();
+                                                if matches!(self.overlay, ShelfOverlay::None) { ShelfOverlay::None }
+                                                else { ShelfOverlay::PauseSettings { row } }},
+                                            Some(138) => ShelfOverlay::PauseBfiSettings { row: 0 },
+                                            _ => ShelfOverlay::PauseSettings { row },
+                                        },
                                         _ => ShelfOverlay::PauseSettings { row },
                                     };
                                 },
@@ -3806,6 +3854,25 @@ impl Engine {
                                 },
                                 21 | 22 => self.change_game_screen_or_gameplay(GAMEPLAY_KEYS[row],code==22),
                                 97 => self.overlay = ShelfOverlay::PauseSettings { row: 1 },
+                                _ => {}
+                            },
+                            ShelfOverlay::PauseBfiSettings { row } => match code {
+                                19 | 20 => self.overlay = ShelfOverlay::PauseBfiSettings {
+                                    row: move_menu_row(row, code, BFI_ROWS.len()),
+                                },
+                                21 | 22 | 96 => match BFI_KEYS.get(row).copied() {
+                                    Some(80) => {
+                                        let platform = self.current_cart_platform();
+                                        let on = !self.settings.bfi_for(platform);
+                                        self.settings.set_bfi_for(platform, on);
+                                        self.persist_settings();
+                                    }
+                                    Some(key) => self.change_setting(key, code != 21),
+                                    None => {}
+                                },
+                                97 => self.overlay = ShelfOverlay::PauseSettings {
+                                    row: self.pause_settings_rows().iter().position(|r| *r == 138).unwrap_or(0),
+                                },
                                 _ => {}
                             },
                             ShelfOverlay::PauseEmulationSettings { row } => match code {
@@ -4154,7 +4221,7 @@ impl Engine {
                             },
                             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
                             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
-                            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } |
+                            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } |
                             ShelfOverlay::States | ShelfOverlay::Cheats { .. } | ShelfOverlay::None => {}
                         }
                     }
@@ -5118,12 +5185,27 @@ impl Engine {
         if self.game.as_ref().is_some_and(GameSession::linked) {
             // Display-only settings cannot alter GBA Link/RFU state.
             &[32]
-        } else if self.game.as_ref().is_some_and(|game| game.disc_count() > 1) {
-            // A multi-disc game: Change Disc puts the next one in.
-            &[32,33,49,125,57,137]
         } else {
-            &[32,33,49,125,57]
+            // A multi-disc game: Change Disc puts the next one in. A panel
+            // fast enough for Black Frame Insertion: its page.
+            let disc = self.game.as_ref().is_some_and(|game| game.disc_count() > 1);
+            match (disc, self.bfi_offered()) {
+                (false, false) => &[32,33,49,125,57],
+                (true, false) => &[32,33,49,125,57,137],
+                (false, true) => &[32,33,49,125,57,138],
+                (true, true) => &[32,33,49,125,57,137,138],
+            }
         }
+    }
+
+    /// Whether this game could run with Black Frame Insertion: the panel's
+    /// fastest refresh is at least twice its frame rate.
+    fn bfi_offered(&self) -> bool {
+        let Some(game) = self.game.as_ref() else { return false };
+        if game.linked() { return false; }
+        let fastest = f64::from(MAX_REFRESH_MILLIHZ.load(Ordering::Acquire)
+            .max(DISPLAY_REFRESH_MILLIHZ.load(Ordering::Acquire))) / 1000.0;
+        bfi_refreshes(fastest, game.fps).is_some()
     }
 
     /// Change Disc: the next disc goes in and the game resumes on it.
@@ -6351,6 +6433,9 @@ impl Engine {
             ShelfOverlay::EmulationSettings { row } => {
                 self.draw_settings_menu(50, &[51, 52, 55], row, &[10, 11, 12], out);
             }
+            ShelfOverlay::PauseBfiSettings { row } => {
+                self.draw_settings_menu(139, &BFI_ROWS, row, &BFI_KEYS, out);
+            }
             ShelfOverlay::PauseEmulationSettings { row } => {
                 // One value per visible row: an extra action sentinel
                 // displaced ALL value glyphs by half a row and
@@ -6910,6 +6995,7 @@ impl Engine {
             ShelfOverlay::EmulationSettings { row } => (8u8, row, 3usize),
             ShelfOverlay::PauseEmulationSettings { row } =>
                 (9u8, row, self.pause_emulation_rows().len()),
+            ShelfOverlay::PauseBfiSettings { row } => (42u8, row, BFI_ROWS.len()),
             ShelfOverlay::ScreenSettings { row } => (5u8, row, SYSTEM_ORDER.len()),
             ShelfOverlay::ScreenSystemSettings { platform,row } =>
                 (16u8,row,Self::system_page_rows(platform).len()),
@@ -7064,9 +7150,12 @@ impl Engine {
         if self.game.is_some() && matches!(self.overlay,
             ShelfOverlay::GameMenu { .. } | ShelfOverlay::Multiplayer |
             ShelfOverlay::PauseSettings { .. } | ShelfOverlay::PauseScreenSettings { .. } |
-            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } |
+            ShelfOverlay::PauseGameplaySettings { .. } | ShelfOverlay::PauseEmulationSettings { .. } | ShelfOverlay::PauseBfiSettings { .. } |
             ShelfOverlay::LayoutPorts { game: true, .. } | ShelfOverlay::LayoutPort { game: true, .. } |
             ShelfOverlay::Cheats { .. }) {
+            // A paused game is drawn at full light (no Black Frame Insertion).
+            self.gpu.set_picture_gain(1.0);
+            self.bfi_gain = 1.0;
             // Coordinate the pause with the remote game. Without this
             // the other Cable peer times out and gpSP RFU can drift.
             if let Some(game) = self.game.as_mut() { game.set_link_paused(true); }
@@ -7154,6 +7243,8 @@ impl Engine {
             SHELF_INDICATOR_FLAGS.store(0, Ordering::Release);
             let mut stepped = 0;
             let mut peer_fault = None;
+            // Full light unless Black Frame Insertion chooses otherwise below.
+            self.bfi_gain = 1.0;
             // RETROARCH mode runs Run-Ahead as RetroArch's Preemptive Frames.
             let mut preemptive = false;
             if self.rewind_held {
@@ -7196,8 +7287,14 @@ impl Engine {
                 // fast-forwarding) so the AudioTrack is never rebuilt.
                 let ra_sync = !session.linked();
                 let display_hz = f64::from(DISPLAY_REFRESH_MILLIHZ.load(Ordering::Acquire)) / 1000.0;
+                // Black Frame Insertion: N refreshes per game frame, the
+                // core clocked by every Nth refresh (as RetroArch's BFI).
+                let bfi = (ra_sync && !fast && self.settings.bfi_for(cart_platform))
+                    .then(|| bfi_refreshes(display_hz, session.fps)).flatten();
+                HIGH_REFRESH_WANTED.store(ra_sync && self.settings.bfi_for(cart_platform), Ordering::Release);
+                let bfi_n = f64::from(bfi.unwrap_or(1));
                 let ra_display_clocked = ra_sync && !fast
-                    && crate::ra_sync::display_can_clock_core(display_hz, session.fps);
+                    && crate::ra_sync::display_can_clock_core(display_hz / bfi_n, session.fps);
                 let wanted_rate = if ra_sync { crate::ra_sync::OUTPUT_RATE } else { session.sample_rate };
                 let current_rate = SAMPLE_RATE.load(Ordering::Acquire);
                 if current_rate != 0 && current_rate != wanted_rate {
@@ -7211,7 +7308,7 @@ impl Engine {
                     let core_rate = f64::from(session.sample_rate);
                     let base = if ra_display_clocked {
                         crate::ra_sync::base_ratio(core_rate, session.fps,
-                            self.ra_sync_steps.display_hz(display_hz))
+                            self.ra_sync_steps.display_hz(display_hz) / bfi_n)
                     } else { f64::from(crate::ra_sync::OUTPUT_RATE) / core_rate };
                     self.ra_adjust = if fast { 1.0 } else {
                         let fifo_frames = AUDIO.lock().unwrap_or_else(|e| e.into_inner()).len() / 2;
@@ -7253,7 +7350,20 @@ impl Engine {
                     } else {
                         self.ra_sync_steps.steps(vsync_frame_ns, display_hz)
                     };
-                    self.game_accum = period * refreshes as f64;
+                    // BFI: a game frame on every Nth refresh, the picture lit
+                    // on the first refreshes of each and dark on the rest.
+                    let frames = match bfi {
+                        Some(n) => {
+                            let n64 = u64::from(n);
+                            let before = self.bfi_phase;
+                            self.bfi_phase = self.bfi_phase.wrapping_add(refreshes as u64);
+                            let (boost, dark, darks) = self.settings.bfi_plan(n);
+                            self.bfi_gain = if self.bfi_phase % n64 < u64::from(n - darks) { boost } else { dark };
+                            (self.bfi_phase / n64 - before / n64) as usize
+                        }
+                        None => { self.bfi_phase = 0; refreshes }
+                    };
+                    self.game_accum = period * frames as f64;
                 } else if mgba_cable_pacing {
                     self.ra_sync_steps.reset();
                     self.game_accum = crate::settings::frame_debt_mgba_cable(
@@ -7426,6 +7536,7 @@ impl Engine {
             // CPU wall time issuing the GL draw work. This is NOT asynchronous
             // GPU execution and excludes Android's later eglSwapBuffers.
             let submit_started = Instant::now();
+            self.gpu.set_picture_gain(self.bfi_gain);
             self.gpu.fit(self.size);
             self.gpu.begin_frame();
             frame_phases.submit_setup_us = submit_started.elapsed().as_micros() as u64;

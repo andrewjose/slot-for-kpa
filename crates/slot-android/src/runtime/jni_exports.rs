@@ -834,6 +834,20 @@ pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeSetDisplayRefresh(
     _env: *mut c_void, _this: *mut c_void, millihz: jint,
 ) { DISPLAY_REFRESH_MILLIHZ.store(millihz.max(0), Ordering::Release); }
 
+/// The panel's fastest refresh, in mHz, for Black Frame Insertion.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeSetMaxRefresh(
+    _env: *mut c_void, _this: *mut c_void, millihz: jint,
+) { MAX_REFRESH_MILLIHZ.store(millihz.max(0), Ordering::Release); }
+
+/// Whether the running game wants the panel's fastest refresh (BFI on).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeHighRefreshWanted(
+    _env: *mut c_void, _this: *mut c_void,
+) -> jni::sys::jboolean {
+    (HIGH_REFRESH_WANTED.load(Ordering::Acquire) && PLAYING.load(Ordering::Acquire)) as jni::sys::jboolean
+}
+
 /// Frame Pacing NATIVE: the running solo game wants the swap-paced loop.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeRaSwapLoop(

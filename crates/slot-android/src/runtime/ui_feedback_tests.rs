@@ -599,3 +599,21 @@ fn turbografx_cd_pages_keep_l2_and_r2_for_slot() {
     assert_eq!(settings.shader_tgcd, crate::settings::Shader::ZfastCrt);
     assert_eq!(settings.shader_psx, crate::settings::Shader::Off, "its own shader");
 }
+
+#[test]
+fn black_frame_insertion_needs_twice_the_games_rate() {
+    // 60fps at 120Hz: one lit, one dark; at 240Hz up to three dark.
+    assert_eq!(bfi_refreshes(120.0, 60.0988), Some(2));
+    assert_eq!(bfi_refreshes(240.0, 59.73), Some(4));
+    // A 60Hz panel, or a PAL game on a 120Hz one: no BFI.
+    assert_eq!(bfi_refreshes(60.0, 60.0988), None);
+    assert_eq!(bfi_refreshes(120.0, 50.0), None);
+    let mut s = crate::settings::Settings::default();
+    assert!(!s.bfi_for(Platform::Snes), "off by default");
+    s.set_bfi_for(Platform::Snes, true);
+    assert!(s.bfi_for(Platform::Snes) && !s.bfi_for(Platform::Nes));
+    assert_eq!(s.bfi_plan(2), (1.0, 0.0, 1));
+    s.bfi_boost = 150; s.bfi_dark = 20; s.bfi_frames = 3;
+    assert_eq!(s.bfi_plan(2), (1.5, 0.2, 1));
+    assert_eq!(s.bfi_plan(4), (1.5, 0.2, 3));
+}

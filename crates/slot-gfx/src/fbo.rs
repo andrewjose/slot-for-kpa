@@ -244,6 +244,11 @@ impl Compositor {
         self.game.set_colour_correction(enabled);
     }
 
+    /// Black Frame Insertion: the game picture's light on this refresh.
+    pub fn set_picture_gain(&mut self, gain: f32) {
+        self.game.set_gain(gain);
+    }
+
     pub fn set_picture(&mut self, rect: [f32; 4]) {
         self.game.set_picture(rect);
     }
