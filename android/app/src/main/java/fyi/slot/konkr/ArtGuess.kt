@@ -47,7 +47,9 @@ internal object ArtGuess {
 
     private val mark = Regex("\\p{M}+")
     private val separator = Regex("[^a-z0-9]+")
-    private val bracketed = Regex("""\([^)]*\)|\[[^]]*]|\{[^}]*}""")
+    // Every bracket escaped: Android's regex engine (ICU) rejects a bare '}'
+    // or ']' that desktop Java accepts, and that killed the app at startup.
+    private val bracketed = Regex("""\([^)]*\)|\[[^\]]*\]|\{[^}]*\}""")
     private val regionTag = Regex("""\((USA|Europe|Japan|World|Asia|Korea|Brazil|Australia|France|Germany|Spain|Italy)\b""",
         RegexOption.IGNORE_CASE)
     private val shortRegion = Regex("""\((U|E|J|UE|JU|JUE|W)\)""")
