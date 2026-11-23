@@ -11,3 +11,8 @@ The overlays are not covered by slot.'s GPL-3.0 license; all rights remain with 
 Changes: cut from 1920x1080 (16:9) to the KONKR's 3:2 screen (960x640): the
 side panels are narrowed and their LED and logo re-centred, the 10:9 screen
 window is unchanged. See tools/watomsk-overlays/make.py.
+
+assets/watomsk/psx-*.png, assets/watomsk/turbografx-*.png and
+assets/watomsk/pcengine-*.png come from his PSX-1080p and Turbografx16-1080p
+packs (black versions), recomposed by tools/watomsk-overlays/export.py like
+the other home consoles' frames.

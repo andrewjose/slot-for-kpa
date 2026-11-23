@@ -264,7 +264,9 @@ pub fn home_rect(mode: VideoMode, aspect: f32, frame: (u32, u32), panel: (u32, u
 /// GBA nowhere on 3:2, beside it on wider screens in Original Ratio
 /// (Perfect_GBA's layout), at the bottom otherwise; NES/SNES/Mega Drive
 /// beside the 4:3 picture on wider screens, nothing on 4:3, and on
-/// narrower screens only the Mega Drive, at the bottom. Never in Stretch.
+/// narrower screens only the Mega Drive, at the bottom. The PlayStation and
+/// TurboGrafx-CD frames go beside the 4:3 picture like the NES's. Never in
+/// Stretch.
 /// `home` is the console's display aspect and frame size.
 pub fn watomsk_fit(bezel: Bezel, platform: Platform, mode: VideoMode, panel: (u32, u32),
     home: (f32, (u32, u32))) -> Option<WatomskFit>
@@ -289,9 +291,7 @@ pub fn watomsk_fit(bezel: Bezel, platform: Platform, mode: VideoMode, panel: (u3
                 band(picture_rect(platform, mode, panel))
             }
         }
-        // No PlayStation overlay (Bezel::PSX is only None).
-        Platform::Psx | Platform::Tgcd => None,
-        Platform::Nes | Platform::Snes | Platform::Md => {
+        Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx | Platform::Tgcd => {
             if a > 4.0 / 3.0 * 1.01 {
                 side(home_rect(VideoMode::Aspect, 4.0 / 3.0, home.1, panel, false))
             } else if a < 4.0 / 3.0 * 0.99 && watomsk::has_band(design) {
@@ -310,8 +310,7 @@ pub fn bezel_offered(platform: Platform, panel: (u32, u32)) -> bool {
         Platform::Gb | Platform::Gbc =>
             picture_rect(platform, VideoMode::Aspect, panel)[0] >= ROOM * panel.0 as f32,
         Platform::Gba | Platform::Md => !screen_fits(platform, panel),
-        Platform::Nes | Platform::Snes => a > 4.0 / 3.0 * 1.01,
-        Platform::Psx | Platform::Tgcd => false,
+        Platform::Nes | Platform::Snes | Platform::Psx | Platform::Tgcd => a > 4.0 / 3.0 * 1.01,
     }
 }
 
@@ -532,7 +531,8 @@ mod watomsk_preview {
         let cases = [(Platform::Gb, Bezel::Gb), (Platform::Gbc, Bezel::Color),
             (Platform::Gba, Bezel::GbaClassic), (Platform::Nes, Bezel::Nes),
             (Platform::Snes, Bezel::SnesAlt), (Platform::Md, Bezel::GenesisClassic),
-            (Platform::Md, Bezel::MegaDrive)];
+            (Platform::Md, Bezel::MegaDrive), (Platform::Psx, Bezel::Psx),
+            (Platform::Tgcd, Bezel::Turbografx), (Platform::Tgcd, Bezel::PcEngine)];
         for panel in panels {
             for (platform, bezel) in cases {
                 for mode in [VideoMode::Actual, VideoMode::Aspect] {
