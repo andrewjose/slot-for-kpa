@@ -1617,6 +1617,7 @@ class MainActivity : Activity() {
                 // A disc (hundreds of MB) is read where it is, through an
                 // open file descriptor; a cartridge is copied into the cache.
                 val disc = Systems.isDisc(ext)
+                if (disc && !DiscSource.canOpenByPath()) askAllFilesAccess()
                 // A multi-disc game: all its discs linked, behind a playlist.
                 val discSet = if (disc) DiscGroups.discsOf(filesDir, rawUri) else null
                 require(ext != "m3u" || discSet != null) { "This playlist's discs weren't found" }
@@ -2630,6 +2631,32 @@ class MainActivity : Activity() {
             prefs.getString(RomFolders.key(system), null)?.let { system to it }
         }.toMap()
         return RomFolders.roots(prefs.getString(ROM_ROOT, null), own)
+    }
+
+    /** Asked once a run: discs need All files access (DiscSource.realPath). */
+    @Volatile private var allFilesAsked = false
+
+    private fun askAllFilesAccess() {
+        if (allFilesAsked || android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return
+        allFilesAsked = true
+        runOnUiThread {
+            val dialog = SlotModalDialog(this, "ALLOW DISCS",
+                "PlayStation and TurboGrafx-CD games need All files access, so their " +
+                    "emulators can open the disc files. slot. still reads and writes only " +
+                    "the folders you chose.")
+            dialog.addButton("ALLOW") {
+                dialog.dismiss()
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName"))
+                try {
+                    startActivity(intent)
+                } catch (error: ActivityNotFoundException) {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+            }
+            dialog.addButton("NOT NOW") { dialog.dismiss() }
+            dialog.show()
+        }
     }
 
     private fun canReadFolder(uri: String): Boolean {

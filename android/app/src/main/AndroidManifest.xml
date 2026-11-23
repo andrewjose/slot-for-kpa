@@ -11,6 +11,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- PlayStation / TurboGrafx-CD discs: the cores open the disc file by
+         path, which Android 11+ allows only with All files access. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <queries>
         <!-- Only the explicitly supported optional status integrations. -->
         <package android:name="com.med.sleepmanager" />
