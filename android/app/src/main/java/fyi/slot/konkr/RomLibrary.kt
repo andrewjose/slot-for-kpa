@@ -452,7 +452,7 @@ internal object RomLibrary {
                 }
                 val (docId, docName) = hit ?: return@mapNotNull null
                 val ext = docName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-                if (ext !in setOf("chd", "pbp")) return@mapNotNull null
+                if (ext !in setOf("chd", "pbp", "iso", "cue")) return@mapNotNull null
                 docId to docName
             }
             if (resolved.isEmpty()) {
@@ -467,7 +467,7 @@ internal object RomLibrary {
         }
         // "(Disc N)" images side by side, without a playlist.
         found.filter {
-            it.id !in consumed && it.extension in setOf("chd", "pbp") && DiscGroups.discNumber(it.name) != null
+            it.id !in consumed && it.extension in setOf("chd", "pbp", "iso", "cue") && DiscGroups.discNumber(it.name) != null
         }.groupBy {
             it.dir.id + "\u0000" + DiscGroups.lower(DiscGroups.gameName(it.name)) + "\u0000" + it.extension
         }.values.filter { it.size >= 2 }.forEach { group ->

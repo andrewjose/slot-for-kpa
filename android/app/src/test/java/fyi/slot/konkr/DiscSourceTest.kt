@@ -19,4 +19,22 @@ class DiscSourceTest {
         assertNull(DiscSource.storagePath("/data/user/0/fyi.slot.konkr/cache/x.chd"))
         assertNull(DiscSource.storagePath("/mnt/user/0"))
     }
+
+    @Test fun aCueSheetsTracksPointWhereTheCoreCanOpenThem() {
+        val sheet = "FILE \"Rondo (Track 01).bin\" BINARY\r\n  TRACK 01 MODE1/2352\r\n" +
+            "    INDEX 01 00:00:00\r\nFILE Rondo_02.bin BINARY\r\n  TRACK 02 AUDIO\r\n" +
+            "FILE \"sub\\Rondo (Track 03).wav\" WAVE\r\n"
+        assertEquals(listOf("Rondo (Track 01).bin", "Rondo_02.bin", "sub/Rondo (Track 03).wav"),
+            DiscSource.cueFiles(sheet))
+        val out = DiscSource.rewriteCue(sheet) { "/storage/X/tg-cd/$it" }
+        assertEquals("FILE \"/storage/X/tg-cd/Rondo (Track 01).bin\" BINARY", out.lines()[0])
+        assertEquals("  TRACK 01 MODE1/2352", out.lines()[1])
+        assertEquals("FILE \"/storage/X/tg-cd/Rondo_02.bin\" BINARY", out.lines()[3])
+        assertEquals("FILE \"/storage/X/tg-cd/sub/Rondo (Track 03).wav\" WAVE", out.lines()[5])
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun aCueTrackOutsideItsFolderIsRefused() {
+        DiscSource.rewriteCue("FILE \"../secret.bin\" BINARY") { it }
+    }
 }
