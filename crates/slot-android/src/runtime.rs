@@ -525,7 +525,7 @@ enum LcdFrom {
     Pause { row: usize },
 }
 
-const MENU_TEXT: [&str; 137] = [
+const MENU_TEXT: [&str; 138] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -663,6 +663,7 @@ const MENU_TEXT: [&str; 137] = [
     "Cheats",                             // 134, game menu (Siham 2026-11-09)
     "PlayStation",                        // 135
     "TurboGrafx-CD",                      // 136
+    "Change Disc",                        // 137, multi-disc games' Settings
 ];
 
 /// LCD Effect menu text, loaded after MENU_TEXT: its heading, Reset to
@@ -3836,6 +3837,9 @@ impl Engine {
                                         3 if !linked => Self::layout_entry(self.current_cart_platform(), true),
                                         4 if !linked => {self.reset_game_emulation();
                                             ShelfOverlay::PauseSettings { row }},
+                                        5 if !linked => {self.change_disc();
+                                            if matches!(self.overlay, ShelfOverlay::None) { ShelfOverlay::None }
+                                            else { ShelfOverlay::PauseSettings { row } }},
                                         _ => ShelfOverlay::PauseSettings { row },
                                     };
                                 },
@@ -5350,8 +5354,22 @@ impl Engine {
         if self.game.as_ref().is_some_and(GameSession::linked) {
             // Display-only settings cannot alter GBA Link/RFU state.
             &[32]
+        } else if self.game.as_ref().is_some_and(|game| game.disc_count() > 1) {
+            // A multi-disc game: Change Disc puts the next one in.
+            &[32,33,49,125,57,137]
         } else {
             &[32,33,49,125,57]
+        }
+    }
+
+    /// Change Disc: the next disc goes in and the game resumes on it.
+    fn change_disc(&mut self) {
+        match self.game.as_mut().and_then(GameSession::next_disc) {
+            Some((disc, of)) => {
+                set_message(format!("Disc {disc} of {of}"));
+                self.overlay = ShelfOverlay::None;
+            }
+            None => set_message("Couldn't change the disc.".into()),
         }
     }
 

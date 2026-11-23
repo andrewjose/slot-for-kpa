@@ -45,6 +45,37 @@ pub struct MemoryMap {
 }
 pub const SET_AUDIO_BUFFER_STATUS_CALLBACK: c_uint = 62;
 pub const SET_NETPACKET_INTERFACE: c_uint = 78;
+/// The core's multi-disc controls (retro_disk_control_callback). A core
+/// that sees no GET_DISK_CONTROL_INTERFACE_VERSION uses this original one.
+pub const SET_DISK_CONTROL_INTERFACE: c_uint = 13;
+/// Asked by a core that can also be told its first disc (version 1 here).
+pub const GET_DISK_CONTROL_INTERFACE_VERSION: c_uint = 57;
+pub const SET_DISK_CONTROL_EXT_INTERFACE: c_uint = 58;
+
+/// retro_disk_control_ext_callback: the seven of the original, then
+/// set_initial_image, get_image_path and get_image_label.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DiskControlExtCallback {
+    pub base: DiskControlCallback,
+    pub set_initial_image: Option<unsafe extern "C" fn(c_uint, *const c_char) -> bool>,
+    pub get_image_path: Option<unsafe extern "C" fn()>,
+    pub get_image_label: Option<unsafe extern "C" fn()>,
+}
+
+/// retro_disk_control_callback: seven function pointers. The last two
+/// (replace_image_index, add_image_index) are never called here.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DiskControlCallback {
+    pub set_eject_state: Option<unsafe extern "C" fn(bool) -> bool>,
+    pub get_eject_state: Option<unsafe extern "C" fn() -> bool>,
+    pub get_image_index: Option<unsafe extern "C" fn() -> c_uint>,
+    pub set_image_index: Option<unsafe extern "C" fn(c_uint) -> bool>,
+    pub get_num_images: Option<unsafe extern "C" fn() -> c_uint>,
+    pub replace_image_index: Option<unsafe extern "C" fn()>,
+    pub add_image_index: Option<unsafe extern "C" fn()>,
+}
 
 #[repr(C)]
 pub struct SensorInterface {

@@ -1657,7 +1657,14 @@ class MainActivity : Activity() {
                 // A disc (hundreds of MB) is read where it is, through an
                 // open file descriptor; a cartridge is copied into the cache.
                 val disc = Systems.isDisc(ext)
-                val target = if (disc) DiscSource.link(this, uri, digest, ext) else File(dir, "$digest.$ext")
+                // A multi-disc game: all its discs linked, behind a playlist.
+                val discSet = if (disc) DiscGroups.discsOf(filesDir, rawUri) else null
+                require(ext != "m3u" || discSet != null) { "This playlist's discs weren't found" }
+                val target = when {
+                    discSet != null -> DiscSource.linkSet(this, discSet.discs, digest)
+                    disc -> DiscSource.link(this, uri, digest, ext)
+                    else -> File(dir, "$digest.$ext")
+                }
                 // Always open via Android SAF; no assumptions about physical filesystem paths.
                 if (!disc && (!target.isFile || target.length() < 0x150)) {
                     val temp = File(dir, "$digest.tmp")
@@ -1701,9 +1708,15 @@ class MainActivity : Activity() {
                 val saves = storage.savesRoot?.let(Uri::parse)
                 val states = storage.statesRoot?.let(Uri::parse)
                 val shared = RetroArchStorage.target(this, rawUri, core, saves, states,
-                    scannedFileName = if (RomSource.isContainer(name))
-                        RomSource.archiveSaveFilename(name, ext) else null,
+                    scannedFileName = when {
+                        RomSource.isContainer(name) -> RomSource.archiveSaveFilename(name, ext)
+                        // One memory card for all the discs, named after
+                        // the game as RetroArch names an .m3u's.
+                        discSet != null -> discSet.title.takeIf { it.isNotBlank() }?.let { "$it.m3u" }
+                        else -> null
+                    },
                     shareGbaSaves = storage.shareGbaSaves)
+                if (discSet != null) DiscGroups.adoptDiscSave(shared.saveLocal, discSet.discs.map { it.second })
                 // A save folder that can't be read no longer stops the game
                 // (backport of upstream 39db0c3): it starts with slot.'s own
                 // saves, and nothing is copied to the folder this time, so a

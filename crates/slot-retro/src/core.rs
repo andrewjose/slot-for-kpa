@@ -118,6 +118,15 @@ pub trait RetroCore: Send {
     /// A solar cartridge's light, 0..=255 (mGBA's own levels stop at 205).
     fn set_sun(&mut self, _luminance: u8) {}
     fn set_frame_skip(&mut self, _skip: bool) {}
+    /// Before load(): start on disc `index` of the playlist at `content`
+    /// (the disc a game was last played on). False when the core can't.
+    fn set_initial_disc(&mut self, _index: u32, _content: &Path) -> bool { false }
+    /// Discs of a multi-disc game (0: the core has no disc controls).
+    fn disc_count(&self) -> u32 { 0 }
+    /// The disc in the drive, from 0.
+    fn disc_index(&self) -> u32 { 0 }
+    /// Opens the tray, puts disc `index` in and closes it a moment later.
+    fn set_disc(&mut self, _index: u32) -> bool { false }
     fn video_xrgb8888(&self) -> &[u8];
     /// Width and height of `video_xrgb8888`: the 240x160 canvas, or a home
     /// console frame at the size its core produced.
