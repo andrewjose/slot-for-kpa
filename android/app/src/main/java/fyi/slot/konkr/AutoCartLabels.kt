@@ -367,6 +367,8 @@ internal object AutoCartLabels {
                     outcome = "EXISTS"
                     continue
                 }
+                // A guess is another game's label: the shelf adds the file name.
+                CartLabelPaths.markBorrowed(target, outcome == "GUESSED")
                 val atomic = AtomicFile(target)
                 val stream = atomic.startWrite()
                 try {

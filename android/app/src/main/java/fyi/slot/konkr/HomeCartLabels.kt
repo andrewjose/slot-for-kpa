@@ -600,6 +600,7 @@ internal object HomeCartLabels {
                 val own = if (early != null) early.own
                     else try { ownLabel(context, rom, listOfNotNull(whole, bare).distinct()) }
                     catch (error: Exception) { Log.w(TAG, "Own art set lookup failed", error); null }
+                var guessed = false
                 var media: Media? = own?.first
                 var imageBytes: ByteArray? = own?.second
                 val sums = listOfNotNull(whole, bare).distinct()
@@ -612,6 +613,7 @@ internal object HomeCartLabels {
                     }
                     media = guess.first
                     imageBytes = guess.second
+                    guessed = true
                 } else if (own == null && creds != null) {
                     asks++
                     asked = true
@@ -634,6 +636,7 @@ internal object HomeCartLabels {
                         }
                         media = guess.first
                         imageBytes = guess.second
+                        guessed = true
                     } else when (answer.code) {
                         200 -> {}
                         400, 401, 403, 423, 426 -> {
@@ -663,6 +666,8 @@ internal object HomeCartLabels {
                 val target = CartLabelPaths.file(context.filesDir, rom.uri)
                 if (target.exists()) { outcome = "EXISTS"; saved++; continue }
                 target.parentFile?.mkdirs()
+                // A guess is another game's label: the shelf adds the file name.
+                CartLabelPaths.markBorrowed(target, guessed)
                 val atomic = AtomicFile(target)
                 val out = atomic.startWrite()
                 try {
