@@ -11,6 +11,7 @@ live in the repo's `tools/` folder.
 | `shader-check/` | Compiles every game-shader mode as GLSL ES 1.00 on Mesa, and renders the CRT shaders on a 240-line and a 480-line picture |
 | `label-guess/` | Runs ArtGuess (the label matcher) on a list of filenames against the real DATs and box-art lists |
 | `kotlin-typecheck/` | Android stubs so new Kotlin files can be type-checked without the Android SDK |
+| `regex-icu-check.py` | Compiles every Kotlin `Regex` literal with ICU, Android's regex engine; CI runs it before the build. The JVM tests can't catch these (run 10's startup crash was one) |
 | `docs/` | Three-level docs: `overview.md`, `engineering.md`, `technical.md` |
 
 ## Why some of these exist

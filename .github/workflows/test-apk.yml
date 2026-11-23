@@ -73,6 +73,8 @@ jobs:
           echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
           echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
           echo "slot. $name ($code)"
+      - name: Regex patterns compile on Android's engine (ICU), not just the JVM's
+        run: python3 tools/fork-dev/regex-icu-check.py android/app/src/main/java
       - name: Kotlin compile and JVM tests (fail fast, before the cores)
         run: gradle --no-daemon -p android :app:testDebugUnitTest
       - name: Export Slot keycap graphics for Android Apps
