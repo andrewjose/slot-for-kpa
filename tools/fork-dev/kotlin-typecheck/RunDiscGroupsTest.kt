@@ -1,0 +1,1 @@
+fun main() { val t = fyi.slot.konkr.DiscGroupsTest(); for (m in t.javaClass.declaredMethods.filter { it.isAnnotationPresent(org.junit.Test::class.java) }) { try { m.invoke(t); println("ok ${m.name}") } catch (e: Exception) { println("FAIL ${m.name}: ${e.cause}") } } }
