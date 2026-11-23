@@ -24,6 +24,14 @@ pub struct Spec {
     pub primary_id: usize,
     /// Home console frames keep their own size, as on the real core.
     pub native_video: bool,
+    /// A multi-disc game's remembered disc: the copy starts on it too.
+    pub disc_memory: Option<PathBuf>,
+}
+
+/// The disc a multi-disc game (an .m3u) was last played on, from 0.
+pub fn remembered_disc(rom: &std::path::Path, memory: Option<&std::path::Path>) -> Option<u32> {
+    if !rom.extension().is_some_and(|e| e.eq_ignore_ascii_case("m3u")) { return None; }
+    std::fs::read_to_string(memory?).ok()?.trim().parse().ok()
 }
 
 impl Spec {
@@ -74,6 +82,9 @@ pub fn open(spec: &Spec, battery: Option<&[u8]>) -> Result<Box<dyn RetroCore>, S
         core.set_option(key, value);
     }
     core.set_native_video(spec.native_video);
+    if let Some(index) = remembered_disc(&spec.rom, spec.disc_memory.as_deref()) {
+        core.set_initial_disc(index, &spec.rom);
+    }
     core.load(&spec.rom).map_err(|e| e.to_string())?;
     if let Some(battery) = battery {
         core.load_save_ram(battery).map_err(|e| e.to_string())?;
@@ -112,7 +123,19 @@ mod tests {
             options: vec![("mgba_color_correction".into(), "OFF".into())],
             primary_id: 1,
             native_video: false,
+            disc_memory: None,
         }
+    }
+
+    #[test]
+    fn a_playlist_starts_on_its_remembered_disc() {
+        let dir = tempfile::tempdir().unwrap();
+        let memory = dir.path().join("abc.disc");
+        let list = std::path::Path::new("/cache/discs/abc.m3u");
+        assert_eq!(remembered_disc(list, Some(&memory)), None);
+        std::fs::write(&memory, "2").unwrap();
+        assert_eq!(remembered_disc(list, Some(&memory)), Some(2));
+        assert_eq!(remembered_disc(std::path::Path::new("/cache/discs/abc.chd"), Some(&memory)), None);
     }
 
     #[test]

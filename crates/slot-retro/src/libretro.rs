@@ -58,6 +58,10 @@ struct Host {
     suppress_speculative_rumble: bool,
     sensors: sensors::Enabled,
     netpacket: Option<NetpacketCallback>,
+    /// A multi-disc game's disc controls (PCSX ReARMed with an .m3u).
+    disk: Option<DiskControlCallback>,
+    /// The core's "start on this disc" (disk control interface version 1).
+    disk_initial: Option<unsafe extern "C" fn(c_uint, *const c_char) -> bool>,
     net: Link,
     net_peer: Option<u16>,
     audio_status: Option<AudioBufferStatusFn>,
@@ -276,6 +280,25 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             }
             let cb = std::ptr::read(data as *const AudioBufferStatusCallback);
             with_host(|h| h.audio_status = cb.callback).is_some()
+        }
+        SET_DISK_CONTROL_INTERFACE => {
+            if data.is_null() {
+                return with_host(|h| h.disk = None).is_some();
+            }
+            let cb = std::ptr::read(data as *const DiskControlCallback);
+            with_host(|h| { h.disk = Some(cb); h.disk_initial = None; }).is_some()
+        }
+        GET_DISK_CONTROL_INTERFACE_VERSION => {
+            if data.is_null() { return false; }
+            *(data as *mut c_uint) = 1;
+            true
+        }
+        SET_DISK_CONTROL_EXT_INTERFACE => {
+            if data.is_null() {
+                return with_host(|h| { h.disk = None; h.disk_initial = None; }).is_some();
+            }
+            let cb = std::ptr::read(data as *const DiskControlExtCallback);
+            with_host(|h| { h.disk = Some(cb.base); h.disk_initial = cb.set_initial_image; }).is_some()
         }
         SET_NETPACKET_INTERFACE => {
             if data.is_null() {
@@ -601,6 +624,8 @@ pub struct LibretroCore {
     av: AvInfo,
     loaded: bool,
     secondary: bool,
+    /// A disc being changed: frames left with the tray open.
+    disc_tray: Option<u16>,
     _lib: Library,
 }
 
@@ -812,6 +837,8 @@ impl LibretroCore {
             suppress_speculative_rumble: false,
             sensors: sensors::Enabled::default(),
             netpacket: None,
+            disk: None,
+            disk_initial: None,
             net: Link::default(),
             net_peer: None,
             audio_status: None,
@@ -854,6 +881,7 @@ impl LibretroCore {
             },
             loaded: false,
             secondary: false,
+            disc_tray: None,
             _lib: lib,
         })
     }
@@ -866,6 +894,7 @@ impl LibretroCore {
             let _a = Active::bind(&mut self.host);
             unsafe { (self.api.unload_game)() };
         }
+        self.disc_tray = None;
         // This snapshot belongs to the currently loaded ROM and must never
         // be reused when another ROM allocates a different audio queue.
         self.mgba_audio = None;
@@ -1086,6 +1115,35 @@ impl RetroCore for LibretroCore {
     fn set_option(&mut self, key: &str, value: &str) {
         LibretroCore::set_option(self, key, value);
     }
+    fn set_initial_disc(&mut self, index: u32, content: &Path) -> bool {
+        let Some(initial) = self.host.disk_initial else { return false };
+        let Ok(path) = CString::new(content.as_os_str().as_encoded_bytes()) else { return false };
+        let _a = Active::bind(&mut self.host);
+        unsafe { initial(index, path.as_ptr()) }
+    }
+    fn disc_count(&self) -> u32 {
+        if !self.loaded { return 0; }
+        self.host.disk.and_then(|d| d.get_num_images).map_or(0, |f| unsafe { f() })
+    }
+    fn disc_index(&self) -> u32 {
+        if !self.loaded { return 0; }
+        self.host.disk.and_then(|d| d.get_image_index).map_or(0, |f| unsafe { f() })
+    }
+    fn set_disc(&mut self, index: u32) -> bool {
+        if !self.loaded || self.disc_tray.is_some() || index >= self.disc_count() { return false; }
+        let Some(disk) = self.host.disk else { return false };
+        let (Some(eject), Some(set)) = (disk.set_eject_state, disk.set_image_index) else { return false };
+        let _a = Active::bind(&mut self.host);
+        unsafe {
+            if !eject(true) { return false; }
+            if !set(index) {
+                eject(false);
+                return false;
+            }
+        }
+        self.disc_tray = Some(30);
+        true
+    }
     fn set_cheats(&mut self, codes: &[String]) {
         if !self.loaded { return; }
         let (Some(reset), Some(set)) = (self.api.cheat_reset, self.api.cheat_set) else { return };
@@ -1168,6 +1226,19 @@ impl RetroCore for LibretroCore {
         {
             let _a = Active::bind(&mut self.host);
             unsafe { (self.api.run)() };
+        }
+        // A disc change: the tray stays open half a second, as a player's
+        // hand would, then closes on the new disc.
+        if let Some(left) = self.disc_tray {
+            if left == 0 {
+                self.disc_tray = None;
+                if let Some(eject) = self.host.disk.and_then(|d| d.set_eject_state) {
+                    let _a = Active::bind(&mut self.host);
+                    unsafe { eject(false) };
+                }
+            } else {
+                self.disc_tray = Some(left - 1);
+            }
         }
         // Read gpSP execution backend only on the first frame and at long
         // intervals thereafter. Changing dynarec/JIT policy is intentionally
@@ -1489,6 +1560,8 @@ mod tests {
             suppress_speculative_rumble: false,
             sensors: sensors::Enabled::default(),
             netpacket: None,
+            disk: None,
+            disk_initial: None,
             net: Link::default(),
             net_peer: None,
             audio_status: None,

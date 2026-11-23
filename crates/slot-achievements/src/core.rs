@@ -114,6 +114,12 @@ impl RetroCore for Tracked {
     fn set_option(&mut self, key: &str, value: &str) {
         self.core.set_option(key, value);
     }
+    fn set_initial_disc(&mut self, index: u32, content: &Path) -> bool {
+        self.core.set_initial_disc(index, content)
+    }
+    fn disc_count(&self) -> u32 { self.core.disc_count() }
+    fn disc_index(&self) -> u32 { self.core.disc_index() }
+    fn set_disc(&mut self, index: u32) -> bool { self.core.set_disc(index) }
     fn set_cheats(&mut self, codes: &[String]) {
         self.core.set_cheats(codes);
     }

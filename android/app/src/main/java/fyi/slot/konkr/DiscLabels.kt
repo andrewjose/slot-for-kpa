@@ -45,6 +45,9 @@ internal object DiscLabels {
     internal data class Disc(
         val uri: String, val platform: String, val title: String, val filename: String,
         val size: Long, val modified: Long,
+        /** A multi-disc game's first disc: read for its code and named for
+         *  its cover ("... (Disc 1)"). The cart's own file otherwise. */
+        val firstUri: String = uri, val firstName: String = filename,
     )
 
     private fun discs(context: Context): List<Disc> {
@@ -57,8 +60,11 @@ internal object DiscLabels {
             val platform = row.optString("platform")
             val uri = row.optString("uri")
             if (platform !in ArtCatalogs.thumbRepos.keys || !uri.startsWith("content://")) return@mapNotNull null
+            val firstUri = row.optJSONArray("discs")?.optString(0)?.takeIf { it.startsWith("content://") }
+            val firstName = row.optJSONArray("disc_names")?.optString(0)?.takeIf { it.isNotBlank() }
             Disc(uri, platform, row.optString("title"), row.optString("filename"),
-                row.optLong("size", -1), row.optLong("modified", -1))
+                row.optLong("size", -1), row.optLong("modified", -1),
+                firstUri ?: uri, firstName ?: row.optString("filename"))
         }
     }
 
@@ -92,11 +98,11 @@ internal object DiscLabels {
     /** Which box art: by product code first, then the closest name. */
     internal fun choose(context: Context, disc: Disc, boxes: List<ArtGuess.Known>,
                         shouldContinue: () -> Boolean): String? {
-        val name = disc.filename.ifBlank { disc.title }
+        val name = disc.firstName.ifBlank { disc.title }
         val titles = ArrayList<String>()
         if (disc.platform == Systems.PSX) {
             val ext = name.substringAfterLast('.', "").lowercase()
-            val serial = DiscId.serial(context, disc.uri, ext)
+            val serial = DiscId.serial(context, disc.firstUri, ext)
             if (serial != null) {
                 val official = ArtCatalogs.discNames(context, disc.platform, serial, shouldContinue)
                 val have = boxes.map { it.name }.toHashSet()

@@ -17,7 +17,7 @@ import java.io.File
  */
 internal object DiscSource {
     private const val DIR = "discs"
-    private var open: ParcelFileDescriptor? = null
+    private var open: List<ParcelFileDescriptor> = emptyList()
 
     /** The path the core opens for the disc at `uri`. */
     @Synchronized
@@ -34,9 +34,45 @@ internal object DiscSource {
             pfd.close()
             throw IllegalStateException("Cannot open this disc", error)
         }
-        open?.close()
-        open = pfd
+        open.forEach { it.close() }
+        open = listOf(pfd)
         return link
+    }
+
+    /**
+     * A multi-disc game (DiscGroups): every disc opened and linked like a
+     * single one, and a playlist (.m3u) naming the links, which is what the
+     * core loads; its disc controls then swap between them. All stay open
+     * until the next game's discs are linked.
+     */
+    @Synchronized
+    fun linkSet(context: Context, discs: List<Pair<String, String>>, digest: String): File {
+        require(discs.isNotEmpty()) { "No discs" }
+        val dir = File(context.cacheDir, DIR).apply { mkdirs() }
+        val opened = ArrayList<ParcelFileDescriptor>()
+        try {
+            dir.listFiles()?.forEach { it.delete() }
+            val lines = StringBuilder()
+            for ((i, disc) in discs.withIndex()) {
+                val (uri, name) = disc
+                val ext = name.substringAfterLast('.', "chd").lowercase(java.util.Locale.ROOT)
+                require(ext == "chd" || ext == "pbp") { "Not a disc image: $name" }
+                val pfd = context.contentResolver.openFileDescriptor(Uri.parse(uri), "r")
+                    ?: error("Cannot read disc ${i + 1}")
+                opened.add(pfd)
+                val link = linkName("$digest-${i + 1}", ext)
+                Os.symlink(fdPath(pfd.fd), File(dir, link).absolutePath)
+                lines.append(link).append('\n')
+            }
+            val playlist = File(dir, "$digest.m3u")
+            playlist.writeText(lines.toString(), Charsets.UTF_8)
+            open.forEach { it.close() }
+            open = opened
+            return playlist
+        } catch (error: Exception) {
+            opened.forEach { runCatching { it.close() } }
+            throw IllegalStateException("Cannot open this game's discs", error)
+        }
     }
 
     internal fun linkName(digest: String, ext: String) = "$digest.${ext.lowercase(java.util.Locale.ROOT)}"

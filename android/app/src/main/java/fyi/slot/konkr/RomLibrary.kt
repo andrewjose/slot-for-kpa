@@ -173,16 +173,20 @@ internal object RomLibrary {
             }
             progress?.invoke(found.size, 0)
         }
+        val sets = discSets(context, treeUri, found)
         for ((index, candidate) in found.withIndex()) {
             progress?.invoke(index, found.size)
+            // A disc of a multi-disc game: on its game's cart, not its own.
+            if (candidate.id in sets.consumed) continue
             if (games.length() >= MAX_ROMS) {
                 truncated = true
                 break
             }
             val (id, name, extension, size, modified, dir) = candidate
             val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-            // Keep the shelf title identical to the RetroArch save basename.
-            val title = name.substringBeforeLast('.').trim().take(200)
+            // Keep the shelf title identical to the RetroArch save basename
+            // (a grouped game's is its name without "(Disc N)", as its save).
+            val title = (sets.titles[id] ?: name.substringBeforeLast('.')).trim().take(200)
             if (title.isEmpty()) continue
             val uriText = fileUri.toString()
             val old = previous[uriText]
@@ -311,6 +315,10 @@ internal object RomLibrary {
                 // cart that keeps its save on one.
                 game.put("home_battery", homeHeader.battery)
             }
+            sets.discs[id]?.let { discs ->
+                game.put("discs", JSONArray(discs.map { it.first }))
+                    .put("disc_names", JSONArray(discs.map { it.second }))
+            }
             if (!home && !gba) {
                 game.put("gb_title", gbTitle)
                     .put("gb_code", gbCode)
@@ -376,6 +384,95 @@ internal object RomLibrary {
         "wonderswancolor", "x1", "x68000", "xbox", "xbox360", "zmachine", "zx81", "zxnext",
         "zxspectrum"
     )
+
+    /** Multi-disc games found in a scan (DiscGroups): the discs of each
+     *  cart, by its candidate id, the titles of grouped carts, and the discs
+     *  that are on another cart. */
+    private class DiscSets(
+        val discs: Map<String, List<Pair<String, String>>>,
+        val titles: Map<String, String>,
+        val consumed: Set<String>,
+    )
+
+    private fun discSets(context: Context, treeUri: Uri, found: List<Candidate>): DiscSets {
+        val discs = HashMap<String, List<Pair<String, String>>>()
+        val titles = HashMap<String, String>()
+        val consumed = HashSet<String>()
+        val resolver = context.contentResolver
+        val listings = HashMap<String, List<Pair<String, String>>>()
+        fun children(dirId: String): List<Pair<String, String>> = listings.getOrPut(dirId) {
+            val out = ArrayList<Pair<String, String>>()
+            try {
+                resolver.query(DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, dirId),
+                    arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
+                    while (c.moveToNext() && out.size < 4000) {
+                        val childId = c.getString(0) ?: continue
+                        out.add(childId to (c.getString(1) ?: continue))
+                    }
+                }
+            } catch (error: Exception) {
+                android.util.Log.w("SlotKonkr", "Playlist folder unreadable", error)
+            }
+            out
+        }
+        // .m3u playlists: their discs, wherever under the playlist's folder.
+        for (list in found.filter { it.extension == "m3u" }) {
+            val text = try {
+                resolver.openInputStream(DocumentsContract.buildDocumentUriUsingTree(treeUri, list.id))
+                    ?.use { input -> String(input.readNBytesCompat(64 * 1024), Charsets.UTF_8) }
+            } catch (_: Exception) { null } ?: continue
+            val resolved = DiscGroups.parseM3u(text).mapNotNull { line ->
+                val path = DiscGroups.segments(line) ?: return@mapNotNull null
+                var dirId = list.dir.id
+                var hit: Pair<String, String>? = null
+                for ((k, part) in path.withIndex()) {
+                    hit = children(dirId).firstOrNull { it.second.equals(part, ignoreCase = true) }
+                        ?: return@mapNotNull null
+                    if (k < path.size - 1) dirId = hit.first
+                }
+                val (docId, docName) = hit ?: return@mapNotNull null
+                val ext = docName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                if (ext !in setOf("chd", "pbp")) return@mapNotNull null
+                docId to docName
+            }
+            if (resolved.isEmpty()) {
+                // A playlist whose discs aren't there: no empty cart.
+                consumed.add(list.id)
+                continue
+            }
+            discs[list.id] = resolved.map { (docId, docName) ->
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, docId).toString() to docName
+            }
+            consumed.addAll(resolved.map { it.first })
+        }
+        // "(Disc N)" images side by side, without a playlist.
+        found.filter {
+            it.id !in consumed && it.extension in setOf("chd", "pbp") && DiscGroups.discNumber(it.name) != null
+        }.groupBy {
+            it.dir.id + "\u0000" + DiscGroups.lower(DiscGroups.gameName(it.name)) + "\u0000" + it.extension
+        }.values.filter { it.size >= 2 }.forEach { group ->
+            val sorted = group.sortedBy { DiscGroups.discNumber(it.name) ?: 0 }
+            val lead = sorted.first()
+            discs[lead.id] = sorted.map {
+                DocumentsContract.buildDocumentUriUsingTree(treeUri, it.id).toString() to it.name
+            }
+            titles[lead.id] = DiscGroups.gameName(lead.name)
+            consumed.addAll(sorted.drop(1).map { it.id })
+        }
+        return DiscSets(discs, titles, consumed)
+    }
+
+    private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (out.size() < limit) {
+            val n = read(buf, 0, minOf(buf.size, limit - out.size()))
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
 
     private fun cartridgeHeader(context: Context, fileUri: Uri, length: Int): ByteArray {
         return try {

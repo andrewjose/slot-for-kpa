@@ -276,6 +276,8 @@ pub struct GameSession {
     gpsp_serial: &'static str,
     rom_path: PathBuf,
     rom_stem: String,
+    /// Where a multi-disc game remembers the disc in the drive.
+    disc_memory: Option<PathBuf>,
     save: PathBuf,
     rtc: PathBuf,
     manual_export_prefix: PathBuf,
@@ -740,6 +742,9 @@ impl GameSession {
             // rcheevos hashes a disc by reading its tracks: not wired up.
             Platform::Psx | Platform::Tgcd => None,
         };
+        // Where a multi-disc game remembers the disc in the drive.
+        let disc_memory = (platform.disc() && linked_boot.is_none())
+            .then(|| root.join(format!("{id}.disc")));
         // Second-instance Run-Ahead boots its copy from these, solo only.
         let runahead_secondary_spec = linked_boot.is_none().then(|| crate::runahead_secondary::Spec {
             core_file: core_file.to_path_buf(),
@@ -749,6 +754,7 @@ impl GameSession {
             options: core.options(),
             primary_id: core.instance_id(),
             native_video: !platform.handheld(),
+            disc_memory: disc_memory.clone(),
         });
         let mut core: Box<dyn RetroCore> = match achievements.zip(console) {
             Some((service, console)) => service.wrap_for_console(Box::new(core), console),
@@ -761,6 +767,11 @@ impl GameSession {
         let named_rom = if which == Core::Bsnes && linked_boot.is_none() {
             Some(named_rom_alias(storage, rom, rom_stem)?)
         } else { None };
+        // A multi-disc game starts on the disc it was last played on, so its
+        // save state (taken on that disc) resumes on it.
+        if let Some(index) = crate::runahead_secondary::remembered_disc(rom, disc_memory.as_deref()) {
+            core.set_initial_disc(index, rom);
+        }
         core.load(named_rom.as_deref().unwrap_or(rom)).map_err(|e| e.to_string())?;
         let load_ms = opening_at.elapsed().as_millis();
         let restore_started = Instant::now();
@@ -975,7 +986,7 @@ impl GameSession {
             stale_state: linked_boot.is_none().then_some(stale_state), opening_battery,
             core, link: None, game_link: None, link_touched: false, home_netplay: None,
             link_peer_bios: peer_bios_option.is_some(), linked_boot, gpsp_serial,
-            rom_path: rom.to_path_buf(), rom_stem: rom_stem.to_owned(),
+            rom_path: rom.to_path_buf(), rom_stem: rom_stem.to_owned(), disc_memory,
             save, rtc, manual_export_prefix, state, retroarch_export,
             gambatte_legacy_export, ring,
             rewind: RewindThread::spawn(REWIND_BYTES), rewind_frames: 0,
@@ -1926,6 +1937,29 @@ impl GameSession {
     /// The highest manual sun of this solar game, one per gauge bar.
     pub fn sun_top(&self) -> u8 {
         crate::emulation::sun_top(self.solar == Some(Solar::Boktai1))
+    }
+
+    /// The discs of a multi-disc game (0 or 1: nothing to change).
+    pub fn disc_count(&self) -> u32 {
+        self.core.disc_count()
+    }
+
+    /// The next disc in the drive (after the last, the first again), also
+    /// in Run-Ahead's prediction copy. Some((disc, of)) from 1 when done.
+    pub fn next_disc(&mut self) -> Option<(u32, u32)> {
+        let count = self.core.disc_count();
+        if count < 2 { return None; }
+        let next = (self.core.disc_index() + 1) % count;
+        if !self.core.set_disc(next) { return None; }
+        if let Some(copy) = self.runahead_secondary.as_mut() {
+            copy.set_disc(next);
+        }
+        if let Some(file) = &self.disc_memory {
+            if let Err(error) = slot_store::atomic_write(file, next.to_string().as_bytes()) {
+                eprintln!("slot-konkr: disc {next} not remembered: {error}");
+            }
+        }
+        Some((next + 1, count))
     }
 
     /// Boktai's sun, live: mGBA reads it the next time the game samples
