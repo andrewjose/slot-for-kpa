@@ -9,6 +9,8 @@ use slot_store::GbPalette;
 #[serde(rename_all = "snake_case")]
 pub enum WallpaperPick {
     None,
+    /// No wallpaper on true black: an OLED panel's pixels stay off.
+    Black,
     Random,
     /// Upstream Slot v1.13: Wallpapers/GBA.png, GB.png, GBC.png,
     /// Recents.png or Favorites.png follow the shelf on screen.
@@ -20,19 +22,22 @@ pub enum WallpaperPick {
 }
 impl WallpaperPick {
     pub fn choices(root: &Path) -> Vec<Self> {
-        let mut choices=vec![Self::None, Self::Random, Self::Shelf, Self::Default, Self::Blur];
+        let mut choices=vec![Self::None, Self::Black, Self::Random, Self::Shelf, Self::Default, Self::Blur];
         choices.extend(crate::wallpaper::list(root).into_iter().map(Self::File));
         choices
     }
     pub fn step(&self, root: &Path, right: bool) -> Self {
         let choices=Self::choices(root);
-        let at=choices.iter().position(|v| v==self).unwrap_or(3);
+        // A missing file counts as Default (a deleted image falls back there).
+        let at=choices.iter().position(|v| v==self)
+            .or_else(|| choices.iter().position(|v| *v==Self::Default)).unwrap_or(0);
         let n=choices.len();
         choices[if right {(at+1)%n}else{(at+n-1)%n}].clone()
     }
     pub fn label(&self) -> String {
         match self {
             Self::None=>"None".into(),
+            Self::Black=>"OLED Black".into(),
             Self::Random=>"Random".into(),
             Self::Shelf=>"Shelf".into(),
             Self::Default=>"Default".into(),
@@ -1142,9 +1147,12 @@ mod tests {
         std::fs::write(dir.join("another.png"), b"placeholder").unwrap();
         std::fs::write(dir.join("GBA.png"), b"placeholder").unwrap();
         let choices=WallpaperPick::choices(&root);
-        assert_eq!(choices, vec![None,Random,Shelf,Default,Blur,
+        assert_eq!(choices, vec![None,Black,Random,Shelf,Default,Blur,
             File("another.png".into()),File("user.png".into())]);
-        assert_eq!(None.step(&root,true), Random);
+        assert_eq!(None.step(&root,true), Black);
+        assert_eq!(Black.step(&root,true), Random);
+        assert_eq!(Black.label(), "OLED Black");
+        assert_eq!(serde_json::to_string(&Black).unwrap(), "\"black\"");
         assert_eq!(Random.step(&root,true), Shelf);
         assert_eq!(Shelf.step(&root,true), Default);
         assert_eq!(None.step(&root,false), File("user.png".into()));

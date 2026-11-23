@@ -754,3 +754,8 @@ fn black_frame_insertion_needs_twice_the_games_rate() {
     assert_eq!(s.bfi_plan(2), (1.5, 0.2, 1));
     assert_eq!(s.bfi_plan(4), (1.5, 0.2, 3));
 }
+
+#[test]
+fn oled_black_names_its_own_value() {
+    assert_eq!(SETTING_VALUE_NAMES[OLED_BLACK_VALUE], "OLED Black");
+}
