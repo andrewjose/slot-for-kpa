@@ -657,7 +657,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 116] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 119] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -686,7 +686,8 @@ const SETTING_VALUE_NAMES: [&str; 116] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "Super Eagle", "xBR-lv2",
                                "Pixel Transparency", "Sunlight Shimmer",
                                "Dot Matrix Color",
-                               "PCSX-ReARMed", "Beetle PCE Fast"];
+                               "PCSX-ReARMed", "Beetle PCE Fast",
+                               "PLAYSTATION", "TURBOGRAFX-16", "PC ENGINE"];
 
 /// The value face (an index in SETTING_VALUE_NAMES) a Settings key shows,
 /// None for an action-only row. Every key a menu lists must have one: the
@@ -782,6 +783,8 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         44 => bezel_value(scoped.bezel_nes),
         45 => bezel_value(scoped.bezel_snes),
         46 => bezel_value(scoped.bezel_md),
+        72 => bezel_value(scoped.bezel_psx),
+        75 => bezel_value(scoped.bezel_tgcd),
         SCREEN_SIZE_KEY => SCREEN_SIZE_VALUE + match video {
             VideoMode::Actual => 0, VideoMode::Aspect => 1, VideoMode::Stretch => 2,
         },
@@ -884,6 +887,7 @@ fn bezel_value(bezel: crate::settings::Bezel) -> usize {
         Nes => 81, NesGrayLogo => 82,
         Snes => 83, SnesAlt => 84, SnesGrayLogo => 85, SnesGrayLogoAlt => 86,
         GenesisClassic => 87, Genesis => 88, MegaDrive => 89,
+        Psx => 116, Turbografx => 117, PcEngine => 118,
     }
 }
 
@@ -4891,8 +4895,8 @@ impl Engine {
             (Platform::Nes,true)=>&[124,90],
             (Platform::Snes|Platform::Md,false)=>&[120,124],
             (Platform::Snes|Platform::Md,true)=>&[120,124,90],
-            // No overlay for the PlayStation yet.
-            (Platform::Psx | Platform::Tgcd,_)=>&[120,124],
+            (Platform::Psx | Platform::Tgcd,false)=>&[120,124],
+            (Platform::Psx | Platform::Tgcd,true)=>&[120,124,90],
         }
     }
     fn screen_keys(platform: Platform)-> &'static [usize] {
@@ -4913,8 +4917,10 @@ impl Engine {
             (Platform::Nes,true)=>&[47,44],
             (Platform::Snes,true)=>&[SCREEN_SIZE_KEY,48,45],
             (Platform::Md,true)=>&[SCREEN_SIZE_KEY,49,46],
-            (Platform::Psx,_)=>&[SCREEN_SIZE_KEY,70],
-            (Platform::Tgcd,_)=>&[SCREEN_SIZE_KEY,73],
+            (Platform::Psx,false)=>&[SCREEN_SIZE_KEY,70],
+            (Platform::Psx,true)=>&[SCREEN_SIZE_KEY,70,72],
+            (Platform::Tgcd,false)=>&[SCREEN_SIZE_KEY,73],
+            (Platform::Tgcd,true)=>&[SCREEN_SIZE_KEY,73,75],
         }
     }
     // Settings > Systems opens with the system's default core, then its
@@ -4982,7 +4988,8 @@ impl Engine {
             (Platform::Nes|Platform::Snes|Platform::Md,false,true)=>&[118,120,124,90],
             // One core: no Default Core row.
             (Platform::Psx | Platform::Tgcd,true,_)=>&[124],
-            (Platform::Psx | Platform::Tgcd,false,_)=>&[120,124],
+            (Platform::Psx | Platform::Tgcd,false,false)=>&[120,124],
+            (Platform::Psx | Platform::Tgcd,false,true)=>&[120,124,90],
         }
     }
     fn system_keys(platform: Platform)-> &'static [usize] {
@@ -5011,9 +5018,11 @@ impl Engine {
             (Platform::Md,false,false)=>&[43,SCREEN_SIZE_KEY,49],
             (Platform::Md,false,true)=>&[43,SCREEN_SIZE_KEY,49,46],
             (Platform::Psx,true,_)=>&[70],
-            (Platform::Psx,false,_)=>&[SCREEN_SIZE_KEY,70],
+            (Platform::Psx,false,false)=>&[SCREEN_SIZE_KEY,70],
+            (Platform::Psx,false,true)=>&[SCREEN_SIZE_KEY,70,72],
             (Platform::Tgcd,true,_)=>&[73],
-            (Platform::Tgcd,false,_)=>&[SCREEN_SIZE_KEY,73],
+            (Platform::Tgcd,false,false)=>&[SCREEN_SIZE_KEY,73],
+            (Platform::Tgcd,false,true)=>&[SCREEN_SIZE_KEY,73,75],
         }
     }
     fn core_key_platform(key:usize)->Option<Platform> {
@@ -5216,7 +5225,7 @@ impl Engine {
         let relaunch=self.game.as_ref().is_some_and(GameSession::requires_relaunch);
         // Shader and color-correction are display-only and safe while linked;
         // never change input, save states, emulation speed or rewind in Link.
-        if relaunch || (linked && !matches!(key,0|1|2|21|22|23|24|25|26|27|44|45|46|47|48|49|60..=69)) {
+        if relaunch || (linked && !matches!(key,0|1|2|21|22|23|24|25|26|27|44|45|46|47|48|49|60..=69|72|75)) {
             set_message("Not available during Multiplayer.".into());
             return;
         }
@@ -8165,8 +8174,8 @@ mod settings_value_tests {
             (Platform::Nes, &[41, 47, 44]),
             (Platform::Snes, &[42, 48, 45]),
             (Platform::Md, &[43, 49, 46]),
-            (Platform::Psx, &[70]),
-            (Platform::Tgcd, &[73]),
+            (Platform::Psx, &[70, 72]),
+            (Platform::Tgcd, &[73, 75]),
         ];
         for (platform, keys) in own {
             for panel in PANELS {

@@ -181,6 +181,8 @@ pub enum Bezel {
     #[serde(alias="genesis_classic_grey")] GenesisClassic,
     #[serde(alias="genesis_grey")] Genesis,
     #[serde(alias="mega_drive_grey")] MegaDrive,
+    // His PlayStation and TurboGrafx-16 / PC Engine overlays.
+    Psx, Turbografx, PcEngine,
 }
 impl Bezel {
     /// GB and GBC also keep the slot. bezel; every system's own Watomsk
@@ -194,8 +196,9 @@ impl Bezel {
         Bezel::SnesGrayLogo, Bezel::SnesGrayLogoAlt];
     pub const MD: [Bezel; 4] = [Bezel::None, Bezel::GenesisClassic, Bezel::Genesis,
         Bezel::MegaDrive];
-    /// No PlayStation overlay yet.
-    pub const PSX: [Bezel; 1] = [Bezel::None];
+    pub const PSX: [Bezel; 2] = [Bezel::None, Bezel::Psx];
+    /// TurboGrafx-CD: the TurboGrafx-16 frame first, then the PC Engine.
+    pub const TGCD: [Bezel; 3] = [Bezel::None, Bezel::Turbografx, Bezel::PcEngine];
     pub fn list(platform: slot_store::Platform) -> &'static [Bezel] {
         use slot_store::Platform;
         match platform {
@@ -205,7 +208,8 @@ impl Bezel {
             Platform::Nes => &Self::NES,
             Platform::Snes => &Self::SNES,
             Platform::Md => &Self::MD,
-            Platform::Psx | Platform::Tgcd => &Self::PSX,
+            Platform::Psx => &Self::PSX,
+            Platform::Tgcd => &Self::TGCD,
         }
     }
     pub fn step_in(self,list:&[Bezel],right:bool)->Self {
@@ -226,6 +230,8 @@ impl Bezel {
             Bezel::SnesGrayLogo => D::SnesGrayLogo, Bezel::SnesGrayLogoAlt => D::SnesGrayLogoAlt,
             Bezel::GenesisClassic => D::GenesisClassic, Bezel::Genesis => D::Genesis,
             Bezel::MegaDrive => D::MegaDrive,
+            Bezel::Psx => D::Psx, Bezel::Turbografx => D::Turbografx,
+            Bezel::PcEngine => D::PcEngine,
         })
     }
 }
@@ -413,6 +419,9 @@ pub struct Settings {
     pub bezel_snes: Bezel,
     #[serde(default="bezel_md_default")]
     pub bezel_md: Bezel,
+    /// PlayStation and TurboGrafx-CD overlays: off for existing installs,
+    /// on for a fresh one (first_install_defaults) except on 3:2 screens.
+    pub bezel_psx: Bezel, pub bezel_tgcd: Bezel,
     pub gb_palettes: bool, pub gb_palette: u8, pub rewind: bool,
     // Number of historical rewind snapshots restored per 100 ms of game time.
     // Prior Android builds captured 10/s and replayed 10/s (1x). Original
@@ -512,6 +521,7 @@ impl Default for Settings {
             colour_correction_gbc: false,
             bezel_gba: Bezel::None, bezel_gbc: Bezel::Default, bezel_gb: Bezel::Default,
             bezel_nes: Bezel::Nes, bezel_snes: Bezel::Snes, bezel_md: Bezel::GenesisClassic,
+            bezel_psx: Bezel::None, bezel_tgcd: Bezel::None,
             gb_palettes: false, gb_palette: 1, rewind: true,
             rewind_speed: 2,
             turbo: true, eject_save: true,
@@ -553,6 +563,8 @@ impl Settings {
             bezel_gb: Bezel::Gb,
             // Shown only where the GBA picture leaves room (not the KONKR).
             bezel_gba: Bezel::GbaClassic,
+            bezel_psx: Bezel::Psx,
+            bezel_tgcd: Bezel::Turbografx,
             gb_palettes: true,
             gb_palette: GB_PALETTE_TWB64_GAME_COM,
             ff_speed: 3,
@@ -579,11 +591,14 @@ impl Settings {
         if device.three_two { defaults.home_bezels_off(); }
         defaults
     }
-    /// NES, SNES and Mega Drive without an overlay.
+    /// NES, SNES, Mega Drive, PlayStation and TurboGrafx-CD without an
+    /// overlay.
     fn home_bezels_off(&mut self) {
         self.bezel_nes = Bezel::None;
         self.bezel_snes = Bezel::None;
         self.bezel_md = Bezel::None;
+        self.bezel_psx = Bezel::None;
+        self.bezel_tgcd = Bezel::None;
     }
     /// Existing Settings.json always wins, including an explicit NATIVE choice.
     /// Only a missing or unreadable first-install configuration gets a
@@ -801,7 +816,8 @@ impl Settings {
             slot_store::Platform::Nes=>self.bezel_nes,
             slot_store::Platform::Snes=>self.bezel_snes,
             slot_store::Platform::Md=>self.bezel_md,
-            slot_store::Platform::Psx | slot_store::Platform::Tgcd=>Bezel::None,
+            slot_store::Platform::Psx=>self.bezel_psx,
+            slot_store::Platform::Tgcd=>self.bezel_tgcd,
         }
     }
     pub fn set_bezel_for(&mut self,platform:slot_store::Platform,value:Bezel) {
@@ -812,7 +828,8 @@ impl Settings {
             slot_store::Platform::Nes=>self.bezel_nes=value,
             slot_store::Platform::Snes=>self.bezel_snes=value,
             slot_store::Platform::Md=>self.bezel_md=value,
-            slot_store::Platform::Psx | slot_store::Platform::Tgcd=>{}
+            slot_store::Platform::Psx=>self.bezel_psx=value,
+            slot_store::Platform::Tgcd=>self.bezel_tgcd=value,
         }
     }
     /// The Bezel row's settings key for each system.
@@ -821,7 +838,6 @@ impl Settings {
             slot_store::Platform::Gba=>25, slot_store::Platform::Gbc=>26,
             slot_store::Platform::Gb=>27, slot_store::Platform::Nes=>44,
             slot_store::Platform::Snes=>45, slot_store::Platform::Md=>46,
-            // No row: the PlayStation has no overlay.
             slot_store::Platform::Psx=>72,
             slot_store::Platform::Tgcd=>75,
         }
@@ -862,6 +878,8 @@ impl Settings {
             44 => self.step_bezel(slot_store::Platform::Nes,right),
             45 => self.step_bezel(slot_store::Platform::Snes,right),
             46 => self.step_bezel(slot_store::Platform::Md,right),
+            72 => self.step_bezel(slot_store::Platform::Psx,right),
+            75 => self.step_bezel(slot_store::Platform::Tgcd,right),
             47 => self.shader_nes=self.shader_nes.step(&Shader::HOME,right),
             48 => self.shader_snes=self.shader_snes.step(&Shader::HOME,right),
             49 => self.shader_md=self.shader_md.step(&Shader::HOME,right),
@@ -1665,6 +1683,8 @@ mod tests {
         let rpc=Settings::first_install_defaults_for_device(Device::RPC);
         assert_eq!((rpc.bezel_nes,rpc.bezel_snes,rpc.bezel_md),
             (Bezel::Nes,Bezel::Snes,Bezel::GenesisClassic));
+        assert_eq!((konkr.bezel_psx,konkr.bezel_tgcd),(Bezel::None,Bezel::None));
+        assert_eq!((rpc.bezel_psx,rpc.bezel_tgcd),(Bezel::Psx,Bezel::Turbografx));
         // A beta's saved overlays go off once on 3:2; a later choice stays.
         let root=std::env::temp_dir().join(format!("slot-home-bezel-{}",std::process::id()));
         let _=fs::remove_dir_all(&root);

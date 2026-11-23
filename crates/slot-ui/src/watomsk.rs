@@ -14,6 +14,9 @@ pub enum Design {
     Nes, NesGrayLogo,
     Snes, SnesAlt, SnesGrayLogo, SnesGrayLogoAlt,
     GenesisClassic, Genesis, MegaDrive,
+    // His PSX and Turbografx16 packs: one PlayStation design, the
+    // TurboGrafx-16 and the PC Engine (used for TurboGrafx-CD).
+    Psx, Turbografx, PcEngine,
 }
 
 /// The screen shape a side frame was drawn for.
@@ -73,6 +76,10 @@ files!(
         "nes-3x2",
         "nes-graylogo-16x9",
         "nes-graylogo-3x2",
+        "pcengine-16x9",
+        "pcengine-3x2",
+        "psx-16x9",
+        "psx-3x2",
         "snes-16x9",
         "snes-3x2",
         "snes-alt-16x9",
@@ -81,6 +88,8 @@ files!(
         "snes-graylogo-3x2",
         "snes-graylogo-alt-16x9",
         "snes-graylogo-alt-3x2",
+        "turbografx-16x9",
+        "turbografx-3x2",
 );
 
 fn key(design: Design) -> &'static str {
@@ -92,6 +101,7 @@ fn key(design: Design) -> &'static str {
         Snes => "snes", SnesAlt => "snes-alt", SnesGrayLogo => "snes-graylogo",
         SnesGrayLogoAlt => "snes-graylogo-alt",
         GenesisClassic => "genesis-classic", Genesis => "genesis", MegaDrive => "megadrive",
+        Psx => "psx", Turbografx => "turbografx", PcEngine => "pcengine",
     }
 }
 
@@ -191,12 +201,13 @@ pub fn has_band(design: Design) -> bool {
 mod tests {
     use super::*;
 
-    const ALL: [Design; 16] = [
+    const ALL: [Design; 19] = [
         Design::Gb, Design::Pocket, Design::Color,
         Design::GbaClassic, Design::Gba, Design::GbaSp, Design::GbaAlt,
         Design::Nes, Design::NesGrayLogo,
         Design::Snes, Design::SnesAlt, Design::SnesGrayLogo, Design::SnesGrayLogoAlt,
         Design::GenesisClassic, Design::Genesis, Design::MegaDrive,
+        Design::Psx, Design::Turbografx, Design::PcEngine,
     ];
 
     #[test]
@@ -227,5 +238,7 @@ mod tests {
         assert_eq!(nearest_shape(Design::Nes, (1280, 800)), Shape::ThreeTwo);
         assert_eq!(nearest_shape(Design::Snes, (2400, 1080)), Shape::SixteenNine);
         assert_eq!(nearest_shape(Design::Gba, (1920, 1080)), Shape::SixteenNine);
+        assert_eq!(nearest_shape(Design::Psx, (960, 640)), Shape::ThreeTwo);
+        assert_eq!(nearest_shape(Design::PcEngine, (1920, 1080)), Shape::SixteenNine);
     }
 }

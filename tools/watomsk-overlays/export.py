@@ -3,7 +3,11 @@
 Usage: python3 export.py <Watomsk 1080p dir> <assets/watomsk dir>
 
 <1080p dir> holds his console folders (GameBoy, GameBoyAdvance, NES, SNES,
-Genesis) from WatomsksOverlays-1080p. Only his black variants ship (the
+Genesis, PSX, Turbografx16) from WatomsksOverlays-1080p; a missing folder
+is skipped, so one system can be exported on its own. PSX and
+Turbografx16 come from his PSX-1080p and Turbografx16-1080p zips (the
+TurboGrafx window, drawn for the PC Engine's own shape, is cut at 4:3 like
+the other home consoles). Only his black variants ship (the
 dark grey -G ones were dropped, Siham 2026-11-04). Two kinds of files:
 
 * <name>-<3x2|4x3|16x9>.png: side frames, all 1080 high (his own
@@ -37,8 +41,11 @@ VARIANTS = {
              ("SNES-GrayLogo", "snes-graylogo"), ("SNES-GrayLogo-Alt", "snes-graylogo-alt")],
     "Genesis": [("Genesis-Classic", "genesis-classic"), ("Genesis", "genesis"),
                 ("Megadrive", "megadrive")],
+    "PSX": [("PSX", "psx")],
+    "Turbografx16": [("Turbografx", "turbografx"), ("PCEngine", "pcengine")],
 }
-SHAPE = {"GameBoy": 10 / 9, "GameBoyAdvance": 1.5, "NES": 4 / 3, "SNES": 4 / 3, "Genesis": 4 / 3}
+SHAPE = {"GameBoy": 10 / 9, "GameBoyAdvance": 1.5, "NES": 4 / 3, "SNES": 4 / 3, "Genesis": 4 / 3,
+         "PSX": 4 / 3, "Turbografx16": 4 / 3}
 
 
 def side(src, W, H, aspect, logo=None):
@@ -103,6 +110,9 @@ def main(src_dir, out):
     C.SRC = src_dir
     os.makedirs(out, exist_ok=True)
     for console, vs in VARIANTS.items():
+        if not os.path.isdir(f"{src_dir}/{console}"):
+            print(f"skip {console}: not in {src_dir}")
+            continue
         for name, key in vs:
             src = C.load(f"{console}/{name}.png")
             if console == "Genesis":
