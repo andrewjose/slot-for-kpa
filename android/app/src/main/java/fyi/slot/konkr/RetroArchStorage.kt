@@ -969,8 +969,16 @@ internal object RetroArchStorage {
         return names
     }
 
+    /** The document a root names: its tree's top, or a folder inside the
+     *  tree (With the ROMs: the system folder of the ROM folder). */
+    internal fun rootId(root: Uri): String {
+        val segments = root.pathSegments
+        return if (segments.size >= 4 && segments[2] == "document") DocumentsContract.getDocumentId(root)
+        else DocumentsContract.getTreeDocumentId(root)
+    }
+
     private fun coreFolder(context: Context, root: Uri, core: String, create: Boolean): Uri? {
-        val rootId = DocumentsContract.getTreeDocumentId(root)
+        val rootId = rootId(root)
         val existing = children(context, root, rootId).firstOrNull { it.first == core }?.second
         if (existing != null) return existing
         if (!create) return null
@@ -1019,7 +1027,7 @@ internal object RetroArchStorage {
     private fun directDocument(root: Uri, core: String, name: String): Uri? {
         if (root.authority != "com.android.externalstorage.documents") return null
         val treeId = try {
-            DocumentsContract.getTreeDocumentId(root)
+            rootId(root)
         } catch (_: IllegalArgumentException) {
             return null
         }

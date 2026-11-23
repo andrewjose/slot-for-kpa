@@ -1651,10 +1651,15 @@ class MainActivity : Activity() {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
                 // A system's own save / state folder, else the all-systems one.
                 val read = { key: String -> prefs.getString(key, null) }
+                // With the ROMs (the default): the game's system folder of
+                // its ROM folder, when slot. may write there.
+                val withRoms = { folder: String? ->
+                    if (folder == SaveFolders.WITH_ROMS) romFolderRoot(uri) else folder
+                }
                 val storage = SlotBuildBehavior.storagePolicy(
                     packageName,
-                    SaveFolders.resolve(read, SAVE_ROOT, ext, core),
-                    SaveFolders.resolve(read, STATE_ROOT, ext, core),
+                    withRoms(SaveFolders.resolve(read, SAVE_ROOT, ext, core)),
+                    withRoms(SaveFolders.resolve(read, STATE_ROOT, ext, core)),
                     prefs.getBoolean(SHARE_GBA_SAVES, false)
                 )
                 val saves = storage.savesRoot?.let(Uri::parse)
@@ -2615,6 +2620,44 @@ class MainActivity : Activity() {
         return RomFolders.roots(prefs.getString(ROM_ROOT, null), own)
     }
 
+    /** Told once a run: the ROM folder was chosen before slot. kept saves
+     *  with the ROMs, so it may only read there. */
+    @Volatile private var romFolderReadOnlyTold = false
+
+    /**
+     * Where a game's saves and states go With the ROMs: the folder of its
+     * system in the ROM folder it came from (gba/ in ROMs/, or a system's
+     * own ROM folder), as a folder inside that ROM folder's tree. Null, and
+     * slot. keeps them itself, when the ROM folder only grants reading or
+     * its provider doesn't name documents by path.
+     */
+    private fun romFolderRoot(game: Uri): String? = try {
+        val treeId = DocumentsContract.getTreeDocumentId(game)
+        val tree = DocumentsContract.buildTreeDocumentUri(game.authority, treeId)
+        val writable = contentResolver.persistedUriPermissions
+            .any { it.uri == tree && it.isWritePermission }
+        if (!writable) {
+            if (!romFolderReadOnlyTold) {
+                romFolderReadOnlyTold = true
+                runOnUiThread {
+                    SlotToast.makeText(this, "Saves stay in slot. for now: choose your ROM folder " +
+                        "again (Library) to keep them with your ROMs.", Toast.LENGTH_LONG).show()
+                }
+            }
+            null
+        } else {
+            val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+            val systemTree = RomFolders.System.entries.any {
+                prefs.getString(RomFolders.key(it), null)?.let(Uri::parse) == tree
+            }
+            SaveFolders.romFolderId(treeId, DocumentsContract.getDocumentId(game), systemTree)
+                ?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it).toString() }
+        }
+    } catch (error: IllegalArgumentException) {
+        Log.w(TAG, "No ROM folder for this game's saves", error)
+        null
+    }
+
     private fun canReadFolder(uri: String): Boolean {
         val tree = Uri.parse(uri)
         return contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
@@ -2699,6 +2742,7 @@ class MainActivity : Activity() {
 
     /** A chosen folder's short name, or null when it isn't a folder tree. */
     private fun folderName(uri: String?): String? = uri?.let {
+        if (it == SaveFolders.WITH_ROMS) return@let "with the ROMs"
         try {
             SaveFolders.shortName(DocumentsContract.getTreeDocumentId(Uri.parse(it)))
         } catch (error: IllegalArgumentException) {
@@ -2719,7 +2763,8 @@ class MainActivity : Activity() {
         val own = SaveFolders.Console.entries
             .filter { prefs.getString(SaveFolders.key(base, it), null) != null }
             .joinToString(", ") { it.short }
-        val summary = "All systems: " + (folderName(prefs.getString(base, null)) ?: "not set") +
+        val summary = "All systems: " + (folderName(prefs.getString(base, null) ?: SaveFolders.WITH_ROMS)
+            ?: "not set") +
             "\nOwn folder: " + own.ifEmpty { "none" }
         val dialog = SlotModalDialog(this,
             if (states) "SAVE STATE FOLDER" else "SAVE FOLDER", summary)
@@ -2730,6 +2775,17 @@ class MainActivity : Activity() {
         dialog.addButton("ONE SYSTEM") {
             dialog.dismiss()
             chooseFolderConsole(states)
+        }
+        dialog.addButton("WITH THE ROMS") {
+            dialog.dismiss()
+            // Each system's folder of the ROM folder, in its core's folder
+            // (gba/mGBA/): the default. A system's own folder still wins.
+            val saved = prefs.edit().remove(base).commit()
+            SlotToast.makeText(this,
+                if (saved) (if (states) "States" else "Saves") +
+                    " now go with the ROMs: each system's folder, in its core's folder."
+                else "Couldn't save this setting.",
+                Toast.LENGTH_LONG).show()
         }
         dialog.show()
     }
@@ -2773,7 +2829,7 @@ class MainActivity : Activity() {
                 Toast.LENGTH_LONG).show()
             // As choosing a folder does: the system's files go to it.
             val all = prefs.getString(SaveFolders.base(states), null)
-            if (saved && all != null) transferToFolder(Uri.parse(all), states, console)
+            if (saved && all != null && all != SaveFolders.WITH_ROMS) transferToFolder(Uri.parse(all), states, console)
         }
         dialog.show()
     }
@@ -2857,8 +2913,10 @@ class MainActivity : Activity() {
     /** The All Systems ROM folder, or `system`'s own. */
     private fun openRomFolderPicker(system: RomFolders.System? = null) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            // Writing too: saves and states go with the ROMs by default.
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
             )
         }
@@ -3220,13 +3278,21 @@ class MainActivity : Activity() {
                 romSystem == null) || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
-            val writable = folderRequest != null
+            // A ROM folder is written too (saves With the ROMs), when the
+            // picker granted it; else read-only, as before.
+            val romFolder = requestCode == FOLDER_REQUEST || romSystem != null
+            val writable = folderRequest != null || romFolder
             val flags = if (writable) {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             } else {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
-            contentResolver.takePersistableUriPermission(uri, flags)
+            try {
+                contentResolver.takePersistableUriPermission(uri, flags)
+            } catch (error: SecurityException) {
+                if (!romFolder) throw error
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             if (romSystem != null) {
                 getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putString(RomFolders.key(romSystem), uri.toString()).apply()
