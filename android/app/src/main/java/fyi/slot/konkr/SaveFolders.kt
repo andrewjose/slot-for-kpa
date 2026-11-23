@@ -7,10 +7,18 @@ import java.util.Locale
  * folder of each system's own that takes its place for that system's
  * games. Inside any chosen folder the layout stays RetroArch's "sort by
  * core" one: <folder>/mGBA/, /Gambatte/, /Snes9x/ and so on.
+ *
+ * With nothing chosen, saves and states go with the ROMs: in the game's
+ * system folder of the ROM folder (ES-DE's gba/, psx/...), so gba/mGBA/
+ * holds the GBA games' saves and states, as RetroArch keeps them with
+ * "sort by core" in the content directory.
  */
 internal object SaveFolders {
     const val SAVE_ROOT = "saves_root_uri"
     const val STATE_ROOT = "states_root_uri"
+    /** A folder setting's value for "in the game's system folder of the ROM
+     *  folder": the default, and a choice in Library > Save Folder. */
+    const val WITH_ROMS = "with-roms"
     const val SAVE_REQUEST = 4703
     const val STATE_REQUEST = 4704
     /** One code per system from here for saves, then one each for states. */
@@ -75,7 +83,23 @@ internal object SaveFolders {
         val console = core?.let { folder -> Console.entries.filter { folder in it.cores }.singleOrNull() }
             ?: Console.forExtension(ext)
         val own = console?.let { read(key(base, it)) }
-        return own ?: read(base)
+        return own ?: read(base) ?: WITH_ROMS
+    }
+
+    /**
+     * The document id of a game's system folder in its ROM folder, where its
+     * saves go With the ROMs: the ROM folder itself when it is a system's own
+     * folder, otherwise the folder of the ROM folder the game is in (gba/,
+     * psx/), however deep the game lies inside it. A game straight in the
+     * ROM folder: the ROM folder. Null when the ids aren't paths
+     * ("primary:ROMs/gba/Game.gba"), as only Android's own storage gives.
+     */
+    fun romFolderId(treeId: String, documentId: String, systemTree: Boolean): String? {
+        val prefix = if (treeId.endsWith(":")) treeId else "$treeId/"
+        if (documentId == treeId || !documentId.startsWith(prefix)) return null
+        if (systemTree) return treeId
+        val first = documentId.removePrefix(prefix).substringBefore('/', "")
+        return if (first.isEmpty()) treeId else prefix + first
     }
 
     /** A short readable name for a folder from its SAF tree document id,

@@ -13,7 +13,7 @@ class SaveFoldersTest {
         SaveFolders.resolve({ prefs[it] }, base, ext)
 
     @Test fun aSystemsOwnFolderWinsOverTheAllSystemsFolder() {
-        assertNull(folder(SaveFolders.SAVE_ROOT, "gba"))
+        assertEquals(SaveFolders.WITH_ROMS, folder(SaveFolders.SAVE_ROOT, "gba"))
         prefs[SaveFolders.SAVE_ROOT] = "content://all"
         for (ext in listOf("gba", "gbc", "gb", "GBA")) {
             assertEquals("content://all", folder(SaveFolders.SAVE_ROOT, ext))
@@ -23,7 +23,7 @@ class SaveFoldersTest {
         assertEquals("content://all", folder(SaveFolders.SAVE_ROOT, "gb"))
         assertEquals("content://all", folder(SaveFolders.SAVE_ROOT, "gba"))
         // States are chosen separately from saves.
-        assertNull(folder(SaveFolders.STATE_ROOT, "gbc"))
+        assertEquals(SaveFolders.WITH_ROMS, folder(SaveFolders.STATE_ROOT, "gbc"))
         prefs["states_root_uri_gb"] = "content://gb-states"
         assertEquals("content://gb-states", folder(SaveFolders.STATE_ROOT, "gb"))
     }
@@ -31,7 +31,7 @@ class SaveFoldersTest {
     @Test fun aSystemFolderWorksWithoutAnAllSystemsFolder() {
         prefs["saves_root_uri_gba"] = "content://gba"
         assertEquals("content://gba", folder(SaveFolders.SAVE_ROOT, "gba"))
-        assertNull(folder(SaveFolders.SAVE_ROOT, "gb"))
+        assertEquals(SaveFolders.WITH_ROMS, folder(SaveFolders.SAVE_ROOT, "gb"))
     }
 
     @Test fun existingFolderChoicesKeepTheirPreferenceNames() {
@@ -142,5 +142,23 @@ class SaveFoldersTest {
         assertTrue(SaveFolders.transfers(null, own, setOf(Console.GB)))
         assertTrue(SaveFolders.transfers(null, own, emptySet()))
         assertTrue(SaveFolders.transfers(null, emptySet(), setOf(Console.SNES)))
+    }
+
+    @Test fun withTheRomsMeansTheGamesSystemFolderOfItsRomFolder() {
+        // One ROM folder, ES-DE's system folders inside it.
+        assertEquals("primary:ROMs/gba",
+            SaveFolders.romFolderId("primary:ROMs", "primary:ROMs/gba/Golden Sun.gba", systemTree = false))
+        assertEquals("ABCD-1234:ROMs/psx",
+            SaveFolders.romFolderId("ABCD-1234:ROMs", "ABCD-1234:ROMs/psx/PSX Superset/Raiden.chd", false))
+        // A ROM folder at the top of the card.
+        assertEquals("ABCD-1234:gba", SaveFolders.romFolderId("ABCD-1234:", "ABCD-1234:gba/Game.gba", false))
+        // A game straight in the ROM folder; a system's own ROM folder.
+        assertEquals("primary:ROMs", SaveFolders.romFolderId("primary:ROMs", "primary:ROMs/Game.gba", false))
+        assertEquals("primary:GBA",
+            SaveFolders.romFolderId("primary:GBA", "primary:GBA/Hacks/Game.gba", systemTree = true))
+        // Ids that aren't paths, or outside the tree: no folder.
+        assertNull(SaveFolders.romFolderId("primary:ROMs", "msf:1234", false))
+        assertNull(SaveFolders.romFolderId("primary:ROMs", "primary:ROMsX/gba/Game.gba", false))
+        assertNull(SaveFolders.romFolderId("primary:ROMs", "primary:ROMs", false))
     }
 }
