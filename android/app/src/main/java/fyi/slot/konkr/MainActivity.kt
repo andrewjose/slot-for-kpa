@@ -2315,6 +2315,10 @@ class MainActivity : Activity() {
                     anotherBatch = HomeCartLabels.fill(applicationContext,
                         shouldContinue = keepGoing,
                         onSaved = { uri -> autoLabelUpdates.add(uri) }) || anotherBatch
+                    // PlayStation and TurboGrafx-CD covers (libretro-thumbnails).
+                    anotherBatch = DiscLabels.fill(applicationContext,
+                        shouldContinue = keepGoing,
+                        onSaved = { uri -> autoLabelUpdates.add(uri) }) || anotherBatch
                 } catch (error: Exception) {
                     Log.w("SlotAutoLabels", "Automatic artwork deferred", error)
                 } finally {
@@ -3089,7 +3093,8 @@ class MainActivity : Activity() {
                     else listOf(Systems.GB, Systems.GBC, Systems.GBA)
                 group.forEach { SlotArtSet.writeNames(applicationContext, it) }
                 when {
-                    platform == null -> null to null
+                    // Not a Studio cart: a disc's cover, if it has one.
+                    platform == null -> DiscLabels.studio(applicationContext, uri)
                     platform.platform in Systems.HOME_PLATFORMS -> HomeCartLabels.studioArt(applicationContext, uri)
                     else -> AutoCartLabels.studioArt(applicationContext, platform)
                 }
@@ -3108,6 +3113,12 @@ class MainActivity : Activity() {
             var real: ByteArray? = null
             var logo: ByteArray? = null
             try {
+                // A disc: the picked box art's cover (the "crc" is its name).
+                if (platform in ArtCatalogs.thumbRepos.keys) {
+                    real = DiscLabels.studioCover(platform, crc)
+                    nativeStudioArt(uri, real, null, kind, name)
+                    return@execute
+                }
                 val target = CartStudioCatalog.games(applicationContext).firstOrNull { it.uri == uri }
                 val entries = SlotArtSet.entries(applicationContext, platform, crc)
                 if (target != null && entries != null) {

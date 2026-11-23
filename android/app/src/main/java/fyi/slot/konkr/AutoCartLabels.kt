@@ -129,6 +129,53 @@ internal object AutoCartLabels {
         return out
     }
 
+    /** Set by guessScan when the official names couldn't be had (retry). */
+    private var guessUnavailable = false
+
+    /**
+     * A cart no checksum or exact name knows: the label of the game it most
+     * likely is (CartGuess), from our own set, else slot.'s. Raw scan bytes,
+     * cut like any other scan; null when nothing is close enough.
+     */
+    private fun guessScan(context: Context, rom: CartStudioCatalog.Rom,
+                          crc: CartStudioCatalog.Fingerprint, index: JSONObject?,
+                          art: CartStudioArtProxy, shouldContinue: () -> Boolean): ByteArray? {
+        guessUnavailable = false
+        val picks = try {
+            CartGuess.candidates(context, rom.platform, rom.filename.ifBlank { rom.title },
+                crc.head, shouldContinue = shouldContinue)
+        } catch (error: Exception) {
+            Log.w(TAG, "Guess unavailable for ${rom.title.take(60)}", error); null
+        }
+        if (picks == null) {
+            guessUnavailable = true
+            return null
+        }
+        for ((platform, dump) in picks) {
+            if (!shouldContinue()) return null
+            if (dump == crc.hex && platform == rom.platform) continue
+            val own = try { SlotArtSet.scanPng(context, platform, dump) } catch (error: Exception) {
+                Log.w(TAG, "Own art set lookup failed for a guess", error); null
+            }
+            if (own != null) return own
+            val path = index?.let { OfficialArtResolver.artPath(it, platform, dump) } ?: continue
+            val response = try { art.intercept(path) } catch (_: Exception) { continue }
+            if (response.statusCode != 200) continue
+            val bytes = response.data.use { input ->
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val n = input.read(buffer)
+                    if (n < 0 || out.size() + n > MAX_SOURCE) break
+                    out.write(buffer, 0, n)
+                }
+                out.toByteArray()
+            }
+            if (bytes.size >= 8) return bytes
+        }
+        return null
+    }
+
     /** Returns true if more bounded foreground work is pending, including retries. */
     fun fill(context: Context, shouldContinue: () -> Boolean, onSaved: (String) -> Unit): Boolean {
         if (!shouldContinue()) return false
@@ -218,9 +265,18 @@ internal object AutoCartLabels {
                     attempted++
                     val index = officialIndex()
                     if (index == null) {
-                        outcome = if (shouldContinue()) "NETWORK_ERROR" else "INTERRUPTED"
-                        continue
+                        // slot.'s set is out of reach: our own set may still
+                        // know the game this cart most likely is.
+                        bytes = guessScan(context, rom, crc, null, art, shouldContinue)
+                        if (bytes == null) {
+                            outcome = if (shouldContinue()) "NETWORK_ERROR" else "INTERRUPTED"
+                            continue
+                        }
+                        outcome = "GUESSED"
                     }
+                }
+                if (bytes == null) {
+                    val index = officialIndex() ?: continue
                     val direct = OfficialArtResolver.artPath(index, rom.platform, crc.hex)
                     // Kotlin getOrPut() re-invokes the initializer when it returns
                     // null. Preserve null failures within THIS pass explicitly,
@@ -234,14 +290,28 @@ internal object AutoCartLabels {
                         break
                     }
                     val dat = if (direct != null) null else dats[rom.platform]
-                    if (direct == null && dat == null) {
-                        outcome = "DAT_UNAVAILABLE"
-                        continue
-                    }
-                    val resolved = OfficialArtResolver.match(rom, crc, index, dat)
+                    val resolved = if (direct == null && dat == null) null
+                        else OfficialArtResolver.match(rom, crc, index, dat)
                     val path = resolved?.let {
                         OfficialArtResolver.artPath(index, rom.platform, it)
-                    } ?: continue // Verified official no-match: session-terminal.
+                    }
+                    if (path == null) {
+                        // No checksum or exact name knows it (a hack, a
+                        // translation, a renamed dump): the game it most
+                        // likely is, by its header and name.
+                        bytes = guessScan(context, rom, crc, index, art, shouldContinue)
+                        if (bytes == null) {
+                            if (!shouldContinue()) { outcome = "INTERRUPTED"; break }
+                            if (guessUnavailable || (direct == null && dat == null)) outcome = "DAT_UNAVAILABLE"
+                            continue // Nothing close enough: session-terminal.
+                        }
+                        outcome = "GUESSED"
+                    }
+                }
+                if (bytes == null) {
+                    val index = officialIndex() ?: continue
+                    val path = OfficialArtResolver.artPath(index, rom.platform,
+                        OfficialArtResolver.match(rom, crc, index, dats[rom.platform]) ?: continue) ?: continue
                     val response = art.intercept(path)
                     if (response.statusCode != 200) {
                         outcome = when (response.statusCode) {

@@ -1,6 +1,7 @@
 //! Android host for the unmodified Slot cartridge graphics and shelf behavior.
 //!
 //! Stage M1: display-only preview carts, not executable games.
+mod disc_serial;
 mod library;
 mod cart_disk_cache;
 mod settings;
