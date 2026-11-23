@@ -25,17 +25,15 @@ internal object DiscSource {
         require(Systems.isDisc(ext)) { "Not a disc image" }
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             ?: error("Cannot read this disc")
-        // The disc's own path, where the core may open it (All files access).
-        realPath(pfd)?.let { own ->
-            open.forEach { it.close() }
-            open = listOf(pfd)
-            return own
-        }
         val dir = File(context.cacheDir, DIR).apply { mkdirs() }
+        // Named by the digest: slot. keys the game's caches, saves and states
+        // by the file name it hands the core, and refuses any other name.
         val link = File(dir, linkName(digest, ext))
         try {
             dir.listFiles()?.forEach { it.delete() }
-            Os.symlink(fdPath(pfd.fd), link.absolutePath)
+            // The disc's own path where the core may open it (All files
+            // access), else the open document's descriptor.
+            Os.symlink(realPath(pfd)?.absolutePath ?: fdPath(pfd.fd), link.absolutePath)
         } catch (error: Exception) {
             pfd.close()
             throw IllegalStateException("Cannot open this disc", error)
@@ -66,13 +64,8 @@ internal object DiscSource {
                 val pfd = context.contentResolver.openFileDescriptor(Uri.parse(uri), "r")
                     ?: error("Cannot read disc ${i + 1}")
                 opened.add(pfd)
-                val own = realPath(pfd)
-                if (own != null) {
-                    lines.append(own.absolutePath).append('\n')
-                    continue
-                }
                 val link = linkName("$digest-${i + 1}", ext)
-                Os.symlink(fdPath(pfd.fd), File(dir, link).absolutePath)
+                Os.symlink(realPath(pfd)?.absolutePath ?: fdPath(pfd.fd), File(dir, link).absolutePath)
                 lines.append(link).append('\n')
             }
             val playlist = File(dir, "$digest.m3u")
@@ -94,9 +87,8 @@ internal object DiscSource {
      * The disc's own file, when slot. may open it by path. Since Android 11
      * an app can't reopen a document's /proc/self/fd link to a file that
      * isn't a photo, video or song (a CHD) without All files access, so the
-     * core's own open of the link fails: PCSX ReARMed won't start, and the
-     * TurboGrafx-CD System Card finds no disc and shows its CD player. With
-     * that access the core opens the real file. Null otherwise: the link.
+     * core's own open of the link may fail. With that access the link points
+     * at the real file instead. Null otherwise: the descriptor's link.
      */
     internal fun realPath(pfd: ParcelFileDescriptor): File? = try {
         val path = storagePath(Os.readlink(fdPath(pfd.fd)))
