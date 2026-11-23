@@ -109,6 +109,42 @@ internal object BiosLibrary {
         } finally {
             pending.values.forEach { it.delete() }
         }
+        // A personal build's bundled BIOS fills in whatever the folder lacks.
+        seedBundled(context)
         return found.keys.toList()
+    }
+
+    /**
+     * Personal builds only: BIOS files packed into the APK under assets/bios/
+     * (never in the public builds or the repository) are copied into the
+     * cores' BIOS folder when it lacks them. A BIOS the player imported
+     * stays. Same names and sizes as a folder import. Returns what it added.
+     */
+    fun seedBundled(context: Context): List<String> {
+        val assets = context.assets
+        val names = try { assets.list("bios")?.toList().orEmpty() } catch (_: Exception) { emptyList() }
+        if (names.isEmpty()) return emptyList()
+        val dest = File(context.filesDir, "BIOS").apply { mkdirs() }
+        if (!dest.isDirectory) return emptyList()
+        val added = mutableListOf<String>()
+        for (asset in names) {
+            val name = asset.lowercase()
+            val sizes = lengths[name] ?: continue
+            val target = File(dest, name)
+            if (target.isFile && target.length().toInt() in sizes) continue
+            val bytes = try {
+                assets.open("bios/$asset").use { it.readBytes() }
+            } catch (_: Exception) { continue }
+            if (bytes.size !in sizes) continue
+            if (name == "gba_bios.bin" && bytes[0] != 0x18.toByte()) continue
+            val temp = File(dest, ".$name.tmp")
+            try {
+                temp.outputStream().use { it.write(bytes) }
+                if (temp.renameTo(target)) added += name
+            } finally {
+                temp.delete()
+            }
+        }
+        return added
     }
 }

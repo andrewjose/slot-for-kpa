@@ -31,3 +31,6 @@
 /.build/
 __pycache__/
 /tools/slot-relay/target
+
+# Personal builds only: BIOS packed into the APK by hand, never committed.
+android/app/src/main/assets/bios/

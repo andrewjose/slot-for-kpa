@@ -1179,6 +1179,15 @@ class MainActivity : Activity() {
         startRaSmartCache()
         // Stage BIOS files before the first queued ROM launch, using the same
         // worker that loads ROMs; no race between BIOS import and core startup.
+        // A personal build's bundled BIOS (assets/bios/) goes in first.
+        gameLoader.execute {
+            try {
+                val added = BiosLibrary.seedBundled(this)
+                if (added.isNotEmpty()) Log.i(TAG, "Bundled BIOS installed: $added")
+            } catch (error: Exception) {
+                Log.e(TAG, "Bundled BIOS failed", error)
+            }
+        }
         getSharedPreferences(PREFS, MODE_PRIVATE).getString(BIOS_ROOT, null)
             ?.let { savedBios ->
                 val uri = Uri.parse(savedBios)
