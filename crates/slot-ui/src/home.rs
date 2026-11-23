@@ -25,6 +25,7 @@ impl HomeMould {
             }
             HomeMould::Snes | HomeMould::SnesUs => Platform::Snes,
             HomeMould::MegaDrive | HomeMould::MegaDriveJp | HomeMould::MegaDriveEa => Platform::Md,
+            HomeMould::JewelCase => Platform::Psx,
         }
     }
 
@@ -34,9 +35,8 @@ impl HomeMould {
             Platform::Nes => Some(HomeMould::Nes),
             Platform::Snes => Some(HomeMould::Snes),
             Platform::Md => Some(HomeMould::MegaDrive),
-            // No disc art yet: PlayStation games borrow the black Mega
-            // Drive shell.
-            Platform::Psx | Platform::Tgcd => Some(HomeMould::MegaDrive),
+            // Discs come in a CD jewel case.
+            Platform::Psx | Platform::Tgcd => Some(HomeMould::JewelCase),
             Platform::Gba | Platform::Gb | Platform::Gbc => None,
         }
     }
@@ -52,6 +52,7 @@ impl HomeMould {
             HomeMould::MegaDrive => Outline::MegaDrive,
             HomeMould::MegaDriveJp => Outline::MegaDriveJp,
             HomeMould::MegaDriveEa => Outline::MegaDriveEa,
+            HomeMould::JewelCase => Outline::JewelCase,
         }
     }
 
@@ -67,7 +68,8 @@ pub fn home_mould_of(cart: &Cart) -> Option<HomeMould> {
     Some(
         cart.shell
             .and_then(|choice| HomeMould::of_outline(choice.outline))
-            .filter(|m| m.platform() == cart.platform)
+            // The case is the PlayStation's and the TurboGrafx-CD's.
+            .filter(|m| m.platform() == cart.platform || default == HomeMould::JewelCase && *m == default)
             .unwrap_or(default),
     )
 }
@@ -83,7 +85,7 @@ fn decoded(bytes: &'static [u8], w: u32, h: u32) -> Vec<u8> {
 
 /// The neutral front shell at its logical size.
 pub(crate) fn neutral(m: HomeMould) -> &'static [u8] {
-    static CACHE: [OnceLock<Vec<u8>>; 9] = [const { OnceLock::new() }; 9];
+    static CACHE: [OnceLock<Vec<u8>>; HomeMould::ALL.len()] = [const { OnceLock::new() }; HomeMould::ALL.len()];
     CACHE[m.index()].get_or_init(|| {
         let (w, h) = m.size();
         decoded(m.art().neutral, w, h)
@@ -98,7 +100,7 @@ pub(crate) fn dense_decal(m: HomeMould) -> Option<Arc<Vec<u8>>> {
 
 /// The outline at 1x: the neutral shell's own alpha.
 pub(crate) fn mask(m: HomeMould) -> &'static [u8] {
-    static CACHE: [OnceLock<Vec<u8>>; 9] = [const { OnceLock::new() }; 9];
+    static CACHE: [OnceLock<Vec<u8>>; HomeMould::ALL.len()] = [const { OnceLock::new() }; HomeMould::ALL.len()];
     CACHE[m.index()].get_or_init(|| neutral(m).iter().skip(3).step_by(4).copied().collect())
 }
 

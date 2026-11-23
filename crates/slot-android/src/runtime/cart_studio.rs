@@ -159,7 +159,8 @@ fn outlines(platform: Platform) -> Vec<(&'static str, Outline)> {
         Platform::Snes => &[("Super Nintendo", Outline::Snes), ("Super Nintendo US", Outline::SnesUs)][..],
         Platform::Md => &[("Mega Drive", Outline::MegaDrive), ("Mega Drive Japan", Outline::MegaDriveJp),
             ("Mega Drive EA", Outline::MegaDriveEa)][..],
-        Platform::Gba | Platform::Psx | Platform::Tgcd => &[][..],
+        Platform::Psx | Platform::Tgcd => &[("Jewel case", Outline::JewelCase)][..],
+        Platform::Gba => &[][..],
     });
     out
 }

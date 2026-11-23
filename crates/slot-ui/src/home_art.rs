@@ -10,12 +10,13 @@ use std::sync::OnceLock;
 
 use unicode_normalization::UnicodeNormalization;
 
-/// The three home consoles.
+/// The three home consoles, and the disc systems (one CD case).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum HomeSystem {
     Nes,
     Snes,
     Md,
+    Disc,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -29,6 +30,7 @@ pub enum HomeMould {
     MegaDrive,
     MegaDriveJp,
     MegaDriveEa,
+    JewelCase,
 }
 
 /// A mould's art and where things sit on it, in its logical pixels.
@@ -75,7 +77,7 @@ macro_rules! art {
 }
 
 // Printed by nes-megadrive/export_app.py.
-static ARTS: [MouldArt; 9] = [
+static ARTS: [MouldArt; 10] = [
     art!("nes", 352, (126, 0, 145, 239),
         [(40.6, 234.6, 101.0, 46.5), (170.4, 234.6, 101.0, 46.5)],
         (166.3, 103.6, 121.6, 39.5), [126, 126, 128], None),
@@ -104,11 +106,16 @@ static ARTS: [MouldArt; 9] = [
         [(52.1, 149.8, 103.6, 58.3), (164.5, 149.8, 103.6, 58.3)],
         (153.2, 86.6, 108.6, 34.7), [14, 14, 15],
         Some(include_bytes!("../../../assets/home/md_ea_decal.png"))),
+    // Drawn by tools/home-art/jewelcase.py: the cover in the insert well,
+    // the core's name on a sticker on the disc, the title printed above it.
+    art!("jewelcase", 276, (36, 8, 260, 260),
+        [(87.0, 196.0, 150.0, 34.0), (87.0, 196.0, 150.0, 34.0)],
+        (91.0, 52.0, 130.0, 30.0), [24, 24, 26], None),
 ];
 
 
 impl HomeMould {
-    pub const ALL: [HomeMould; 9] = [
+    pub const ALL: [HomeMould; 10] = [
         HomeMould::Nes,
         HomeMould::Famicom,
         HomeMould::FamicomNamco,
@@ -118,6 +125,7 @@ impl HomeMould {
         HomeMould::MegaDrive,
         HomeMould::MegaDriveJp,
         HomeMould::MegaDriveEa,
+        HomeMould::JewelCase,
     ];
 
     pub fn index(self) -> usize {
@@ -139,6 +147,7 @@ impl HomeMould {
             }
             HomeMould::Snes | HomeMould::SnesUs => HomeSystem::Snes,
             HomeMould::MegaDrive | HomeMould::MegaDriveJp | HomeMould::MegaDriveEa => HomeSystem::Md,
+            HomeMould::JewelCase => HomeSystem::Disc,
         }
     }
 
@@ -148,6 +157,7 @@ impl HomeMould {
             HomeSystem::Nes => HomeMould::Nes,
             HomeSystem::Snes => HomeMould::Snes,
             HomeSystem::Md => HomeMould::MegaDrive,
+            HomeSystem::Disc => HomeMould::JewelCase,
         }
     }
 
@@ -163,6 +173,7 @@ impl HomeMould {
             HomeMould::MegaDrive => "megadrive",
             HomeMould::MegaDriveJp => "megadrive-jp",
             HomeMould::MegaDriveEa => "megadrive-ea",
+            HomeMould::JewelCase => "jewelcase",
         }
     }
 
@@ -333,5 +344,6 @@ pub fn home_pick(system: HomeSystem, stem: &str, region: &str, maker: &str) -> (
             };
             (mould, mould.art().colour, false)
         }
+        HomeSystem::Disc => (HomeMould::JewelCase, HomeMould::JewelCase.art().colour, false),
     }
 }
