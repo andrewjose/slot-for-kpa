@@ -657,7 +657,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 119] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 120] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -687,7 +687,8 @@ const SETTING_VALUE_NAMES: [&str; 119] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "Pixel Transparency", "Sunlight Shimmer",
                                "Dot Matrix Color",
                                "PCSX-ReARMed", "Beetle PCE Fast",
-                               "PLAYSTATION", "TURBOGRAFX-16", "PC ENGINE"];
+                               "PLAYSTATION", "TURBOGRAFX-16", "PC ENGINE",
+                               "OLED Black"];
 
 /// The value face (an index in SETTING_VALUE_NAMES) a Settings key shows,
 /// None for an action-only row. Every key a menu lists must have one: the
@@ -739,6 +740,7 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         33 => if settings.icons_on_bottom { 98 } else { 99 },
         16 => match &settings.wallpaper {
             crate::settings::WallpaperPick::None => 17,
+            crate::settings::WallpaperPick::Black => 119,
             crate::settings::WallpaperPick::Random => 18,
             crate::settings::WallpaperPick::Shelf => 65,
             crate::settings::WallpaperPick::Default => 19,
@@ -1262,7 +1264,7 @@ fn wallpaper_pixels(root: Option<&Path>, selection: &crate::settings::WallpaperP
     use crate::settings::WallpaperPick;
     let default = || slot_ui::default_background_native().map(|v|v.to_vec());
     let personal = match (selection, root) {
-        (WallpaperPick::None, _) => return (None, false),
+        (WallpaperPick::None | WallpaperPick::Black, _) => return (None, false),
         (WallpaperPick::Default, _) => return (default(), false),
         (WallpaperPick::Blur, _) =>
             return (slot_ui::blur_background_native().map(|v|v.to_vec()), false),
@@ -5705,11 +5707,18 @@ impl Engine {
         }
     }
 
+    /// The carousel ground under no wallpaper: slot.'s dark grey, or true
+    /// black for OLED Black so an OLED panel leaves those pixels off.
+    fn ground_colour(&self) -> [f32; 4] {
+        if self.settings.wallpaper == crate::settings::WallpaperPick::Black { [0.0, 0.0, 0.0, 1.0] }
+        else { [0.085, 0.085, 0.093, 1.0] }
+    }
+
     /// The CRT-off / black-hold picture: dark slot, seated cartridge.
     fn push_hold_scene(&self, commands: &mut Vec<Draw>) {
         commands.push(Draw::Rect {
             x: 0.0, y: 0.0, w: out_w() as f32, h: OUT_H as f32,
-            colour: [0.085, 0.085, 0.093, 1.0],
+            colour: self.ground_colour(),
         });
         if let Some(shelf) = self.shelves.get(self.active) {
             if let Some(cart) = shelf.carts.get(shelf.index) {
@@ -7514,6 +7523,7 @@ impl Engine {
         // Resolve the optional transparent material before mutably borrowing
         // the selected rack, otherwise Rust rejects the overlapping borrows.
         let (selected_clear_back, selected_clear_front) = self.clear_layers();
+        let ground = self.ground_colour();
         let shelf = &mut self.shelves[self.active];
 
         // Original Slot: 450ms seating + 280ms hold. Start the original
@@ -7538,7 +7548,8 @@ impl Engine {
             y: 0.0,
             w: out_w() as f32,
             h: OUT_H as f32,
-            colour: [0.085, 0.085, 0.093, 1.0],
+            // OLED Black: true black, the panel's pixels off.
+            colour: ground,
         }];
         // Slot v1.7 carousel ground: None has no wallpaper; personal images
         // receive only the selected Wallpaper Tint (never a fixed scrim).
@@ -7546,8 +7557,8 @@ impl Engine {
             .then(|| self.shelf_wallpaper_ready.get(self.active).copied().unwrap_or(false)
                 .then(|| self.shelf_wallpaper_texs.get(self.active).copied().flatten()).flatten())
             .flatten();
-        let active_wallpaper = if self.settings.wallpaper ==
-            crate::settings::WallpaperPick::None { None }
+        let active_wallpaper = if matches!(self.settings.wallpaper,
+            crate::settings::WallpaperPick::None | crate::settings::WallpaperPick::Black) { None }
             else { shelf_wallpaper.or(self.wallpaper_texture) };
         let tint = if self.wallpaper_personal || shelf_wallpaper.is_some() {
             self.settings.wallpaper_tint.alpha()
