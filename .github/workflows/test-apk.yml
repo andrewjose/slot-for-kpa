@@ -73,8 +73,8 @@ jobs:
         run: |
           set -euo pipefail
           gradle=android/app/build.gradle.kts
-          code="$(sed -nE 's/^ *versionCode = ([0-9]+)$/\1/p' "$gradle")"
-          name="$(sed -nE 's/^ *versionName = "([^"]+)"$/\1/p' "$gradle")"
+          code="$(sed -nE 's/^ *versionCode = ([0-9]+)$/\1/p' "$gradle" | head -n 1)"
+          name="$(sed -nE 's/^ *versionName = "([^"$]+)"$/\1/p' "$gradle" | head -n 1)"
           test -n "$code" && test -n "$name"
           code=$((code * 1000 + SLOT_FORK_RUN)); name="$name-fork.$SLOT_FORK_RUN"
           echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
