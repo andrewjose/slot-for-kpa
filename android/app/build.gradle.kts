@@ -18,6 +18,13 @@ android {
         // 1.2.3: Frame Pacing NATIVE / RESPONSIVE.
         versionCode = 357
         versionName = "2.2.2"
+        // andrewjose's fork releases (CI sets SLOT_FORK_RUN to the run
+        // number): 2.2.2-fork.N with code 357000 + N, so every run is newer
+        // than the last for the in-app updater, which reads this fork.
+        System.getenv("SLOT_FORK_RUN")?.toIntOrNull()?.let { run ->
+            versionCode = 357_000 + run
+            versionName = "${versionName}-fork.$run"
+        }
         ndk { abiFilters += listOf("arm64-v8a") }
         // slot.'s ScreenScraper developer credentials for the NES, Super
         // Nintendo and Mega Drive labels, from GitHub secrets at build time
@@ -43,7 +50,8 @@ android {
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".diag"
-            versionNameSuffix = "-mac-lab"
+            // A fork release keeps its plain 2.2.2-fork.N name for the updater.
+            versionNameSuffix = if (System.getenv("SLOT_FORK_RUN") != null) null else "-mac-lab"
             isDebuggable = true
         }
     }

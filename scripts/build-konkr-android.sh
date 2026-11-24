@@ -9,6 +9,8 @@ if [ -z "$SLOT_KONKR_VERSION" ]; then
   echo "Cannot read Android versionName" >&2
   exit 1
 fi
+# A fork release (CI): the same 2.2.2-fork.N name the APK gets.
+if [ -n "${SLOT_FORK_RUN:-}" ]; then SLOT_KONKR_VERSION="${SLOT_KONKR_VERSION}-fork.${SLOT_FORK_RUN}"; fi
 export SLOT_KONKR_VERSION
 rustup target add aarch64-linux-android
 if [ ! -f android/app/src/main/jniLibs/arm64-v8a/libmgba_libretro.so ]; then

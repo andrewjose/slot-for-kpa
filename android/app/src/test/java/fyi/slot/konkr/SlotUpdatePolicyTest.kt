@@ -41,14 +41,25 @@ class SlotUpdatePolicyTest {
         assertTrue(SlotUpdatePolicy.newer("1.3.0", "1.2.99"))
     }
 
-    @Test fun bothRepositoryNamesAreAccepted() {
-        assertTrue(SlotUpdatePolicy.releasePage("https://github.com/Baggio94/slot-for-kpa/releases/tag/konkr-v1.3.5"))
-        assertTrue(SlotUpdatePolicy.releasePage("https://github.com/Baggio94/slot-for-android/releases/tag/v1.3.6"))
-        assertFalse(SlotUpdatePolicy.releasePage("https://github.com/Baggio94/slot-for-androidx/releases/tag/v1.3.6"))
-        assertFalse(SlotUpdatePolicy.releasePage("https://github.com/someone/slot-for-android/releases/tag/v1.3.6"))
-        assertTrue(SlotUpdatePolicy.assetPath("/Baggio94/slot-for-kpa/releases/download/konkr-v1.3.5/a.apk"))
-        assertTrue(SlotUpdatePolicy.assetPath("/Baggio94/slot-for-android/releases/download/v1.3.6/a.apk"))
-        assertFalse(SlotUpdatePolicy.assetPath("/Baggio94/slot-for-android/archive/v1.3.6.zip"))
+    @Test fun onlyTheForksReleasesAreAccepted() {
+        assertTrue(SlotUpdatePolicy.releasePage("https://github.com/andrewjose/slot-for-kpa/releases/tag/v2.2.2-fork.24"))
+        assertFalse(SlotUpdatePolicy.releasePage("https://github.com/Baggio94/slot-for-android/releases/tag/v3.0.0"))
+        assertFalse(SlotUpdatePolicy.releasePage("https://github.com/andrewjose/slot-for-kpax/releases/tag/v2.2.2-fork.24"))
+        assertFalse(SlotUpdatePolicy.releasePage("https://github.com/someone/slot-for-kpa/releases/tag/v2.2.2-fork.24"))
+        assertTrue(SlotUpdatePolicy.assetPath("/andrewjose/slot-for-kpa/releases/download/v2.2.2-fork.24/a.apk"))
+        assertFalse(SlotUpdatePolicy.assetPath("/Baggio94/slot-for-android/releases/download/v3.0.0/a.apk"))
+        assertFalse(SlotUpdatePolicy.assetPath("/andrewjose/slot-for-kpa/archive/v2.2.2-fork.24.zip"))
+    }
+
+    @Test fun eachForkRunIsNewerThanTheLast() {
+        assertEquals("2.2.2-fork.24", SlotUpdatePolicy.tagVersion("v2.2.2-fork.24"))
+        assertTrue(SlotUpdatePolicy.newer("2.2.2-fork.24", "2.2.2-fork.23"))
+        assertTrue(SlotUpdatePolicy.newer("2.2.2-fork.100", "2.2.2-fork.99"))
+        assertFalse(SlotUpdatePolicy.newer("2.2.2-fork.24", "2.2.2-fork.24"))
+        assertFalse(SlotUpdatePolicy.newer("2.2.2-fork.23", "2.2.2-fork.24"))
+        // A fork build offers prereleases and stable releases alike.
+        assertTrue(SlotUpdatePolicy.eligible("2.2.2-fork.23", "2.2.2-fork.24", prerelease = false))
+        assertEquals(2, SlotUpdatePolicy.apkRank("slot-for-android-2.2.2-fork.24-arm64.apk", "2.2.2-fork.24"))
     }
 
     @Test fun oldAndNewTagsNameTheirVersion() {

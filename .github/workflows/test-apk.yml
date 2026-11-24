@@ -1,12 +1,13 @@
-# Test build of andrewjose's branches (PlayStation, LCD Effect at Integer,
-# per-system save folders) on upstream v2.2.2, for sideloading on a KONKR.
-# Not part of any pull request: lives only on build/test-apk.
-# The debug APK is "fyi.slot.konkr.diag", so it installs NEXT TO the official
-# slot. without touching its data. It is signed with the fixed throwaway test
-# key in .github/test-signing (password "android"), so each new test build
-# installs as an update of the previous one. Steps are upstream's production
-# workflow minus its tests; ScreenScraper secrets are upstream's own, so this
-# build fetches no NES/SNES/Mega Drive labels.
+# andrewjose's slot. fork for the KONKR (PlayStation, TurboGrafx-CD, saves
+# with the ROMs and the rest), on upstream v2.2.2. The fork no longer
+# follows upstream (2026-11-23): this branch is the fork's main line.
+# Every push builds the debug APK "fyi.slot.konkr.diag" (installs next to the
+# official slot.), signed with the fixed throwaway test key in
+# .github/test-signing (password "android") so each build installs over the
+# last, and publishes it as release v2.2.2-fork.<run>, which the in-app
+# updater offers. ScreenScraper secrets are upstream's own, so this build
+# fetches no NES/SNES/Mega Drive labels. Commits that don't change the app
+# use [skip ci].
 name: Test APK
 
 on:
@@ -25,8 +26,13 @@ jobs:
     env:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       ANDROID_HOME: /usr/local/lib/android/sdk
+      # Fork release number: versionName 2.2.2-fork.N, versionCode 357000 + N.
+      SLOT_FORK_RUN: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history, for release notes since the last fork release.
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -70,6 +76,7 @@ jobs:
           code="$(sed -nE 's/^ *versionCode = ([0-9]+)$/\1/p' "$gradle")"
           name="$(sed -nE 's/^ *versionName = "([^"]+)"$/\1/p' "$gradle")"
           test -n "$code" && test -n "$name"
+          code=$((code * 1000 + SLOT_FORK_RUN)); name="$name-fork.$SLOT_FORK_RUN"
           echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
           echo "VERSION_NAME=$name" >> "$GITHUB_ENV"
           echo "slot. $name ($code)"
@@ -138,9 +145,12 @@ jobs:
           name: slot-test-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      # Artifacts download only through Azure blob storage; a release asset
-      # downloads from GitHub, so test builds can be fetched outside Actions.
-      - name: Publish the APK as a test prerelease
+      # The fork's release: what the in-app updater offers (SlotUpdater
+      # reads andrewjose/slot-for-kpa, tag vX.Y.Z-fork.N, APK
+      # slot-for-android-<version>-arm64.apk, SHA256SUMS.txt). The APK holds
+      # no BIOS: personal builds add theirs outside CI and are never published.
+      # A commit that doesn't change the app says [skip ci] and makes none.
+      - name: Publish the fork release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -149,11 +159,19 @@ jobs:
           BADGING="$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump badging "$APK" | head -1)"
           NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING")"
           CODE="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$BADGING")"
-          test -n "$NAME" && test -n "$CODE"
-          TAG="test-v${NAME}-${CODE}-run${GITHUB_RUN_NUMBER}"
-          FILE="slot-${NAME}-${CODE}-test-run${GITHUB_RUN_NUMBER}.apk"
+          [[ "$NAME" == *-fork."$SLOT_FORK_RUN" ]] || { echo "Unexpected versionName $NAME" >&2; exit 1; }
+          if unzip -Z -1 "$APK" | grep -q '^assets/bios/'; then echo "BIOS in the APK: refusing to publish" >&2; exit 1; fi
+          TAG="v${NAME}"
+          FILE="slot-for-android-${NAME}-arm64.apk"
           cp "$APK" "$FILE"
-          gh release create "$TAG" "$FILE" --prerelease --target "$GITHUB_SHA" \
-            --title "Test build ${NAME} (${CODE}), run ${GITHUB_RUN_NUMBER}" \
-            --notes "Debug test build (fyi.slot.konkr.diag) of build/test-apk at ${GITHUB_SHA}. Not a release."
+          sha256sum "$FILE" > SHA256SUMS.txt
+          PREV="$(git tag --list 'v*-fork.*' --sort=-version:refname | head -1)"
+          {
+            echo "slot. for KONKR, andrewjose's fork: ${NAME} (code ${CODE}), CI run ${SLOT_FORK_RUN}."
+            echo
+            if [ -n "$PREV" ]; then echo "Changes since ${PREV}:"; git log --no-merges --pretty='- %s' "${PREV}..${GITHUB_SHA}";
+            else echo "First fork release."; fi
+          } > notes.md
+          gh release create "$TAG" "$FILE" SHA256SUMS.txt --target "$GITHUB_SHA" --latest \
+            --title "slot. ${NAME}" --notes-file notes.md
           echo "Published $TAG: $FILE"

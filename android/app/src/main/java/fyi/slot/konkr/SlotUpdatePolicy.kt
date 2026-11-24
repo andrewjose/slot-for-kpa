@@ -51,18 +51,20 @@ internal object SlotUpdatePolicy {
     }
 
     /**
-     * The repository was renamed from slot-for-kpa to slot-for-android, its
-     * tags from konkr-vX.Y.Z to vX.Y.Z and its APKs from slot-for-konkr-* to
-     * slot-for-android-*. Both names are accepted so no install is stranded.
+     * andrewjose's fork updates from its own releases only (tags
+     * v2.2.2-fork.N). Upstream renamed its tags from konkr-vX.Y.Z to vX.Y.Z
+     * and its APKs from slot-for-konkr-* to slot-for-android-*; both stay
+     * accepted, and the fork's releases use the new APK name.
      */
-    private val REPOS = listOf("slot-for-android", "slot-for-kpa")
+    private const val OWNER = "andrewjose"
+    private val REPOS = listOf("slot-for-kpa")
     private val TAG = Regex("""^(?:konkr-)?v(\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)$""")
 
     fun releasePage(url: String): Boolean =
-        REPOS.any { url.startsWith("https://github.com/Baggio94/$it/releases/") }
+        REPOS.any { url.startsWith("https://github.com/$OWNER/$it/releases/") }
 
     fun assetPath(path: String): Boolean =
-        REPOS.any { path.startsWith("/Baggio94/$it/releases/download/") }
+        REPOS.any { path.startsWith("/$OWNER/$it/releases/download/") }
 
     /** The version a release tag names, or null for any other tag. */
     fun tagVersion(tag: String): String? = TAG.matchEntire(tag)?.groupValues?.get(1)
