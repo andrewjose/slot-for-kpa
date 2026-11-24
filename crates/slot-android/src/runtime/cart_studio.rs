@@ -910,6 +910,25 @@ impl Engine {
         ok
     }
 
+    /// X in the SELECT core menu: the selected cart's file name band on or
+    /// off, the same `.title` marker as Cart Studio's File name row.
+    pub(super) fn toggle_name_band(&mut self) {
+        let shelf = &self.shelves[self.active];
+        let Some(cart) = shelf.carts.get(shelf.index) else { return };
+        let Some(label) = cart.label.clone() else {
+            set_message("This cartridge has no label to name.".into());
+            return;
+        };
+        let uri = cart.rom.to_string_lossy().into_owned();
+        let on = !slot_ui::borrowed_label(&label);
+        if let Err(error) = set_name_band(&label, on) {
+            set_error_message("Couldn't save the file name setting.", &error);
+            return;
+        }
+        self.show_cart_change(&uri, None);
+        set_message(if on { "File name: Shown" } else { "File name: Hidden" }.into());
+    }
+
     /// Redraws a cart that Cart Studio changed, in place: no library reload.
     fn show_cart_change(&mut self, uri: &str, shell: Option<Option<ShellChoice>>) {
         let auto = shell.map(|_| crate::library::auto_shell_of(uri));
@@ -1374,5 +1393,38 @@ mod layout_tests {
                 assert!(((l.x1 - l.x0) - (c1 - c0)).abs() < 0.01);
             }
         }
+    }
+}
+
+/// Writes or removes the `.title` marker beside a label file, which makes
+/// the shelf draw the cart's file name along the label's bottom.
+pub(super) fn set_name_band(label: &std::path::Path, on: bool) -> std::io::Result<()> {
+    let marker = label.with_extension("title");
+    if on {
+        if let Some(dir) = marker.parent() { std::fs::create_dir_all(dir)?; }
+        std::fs::write(&marker, b"")
+    } else {
+        match std::fs::remove_file(&marker) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod name_band_tests {
+    #[test]
+    fn the_name_band_marker_comes_and_goes() {
+        let dir = std::env::temp_dir().join(format!("slot-name-band-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let label = dir.join("abc.png");
+        std::fs::write(&label, b"png").unwrap();
+        assert!(!slot_ui::borrowed_label(&label));
+        super::set_name_band(&label, true).unwrap();
+        assert!(slot_ui::borrowed_label(&label));
+        super::set_name_band(&label, false).unwrap();
+        assert!(!slot_ui::borrowed_label(&label));
+        super::set_name_band(&label, false).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

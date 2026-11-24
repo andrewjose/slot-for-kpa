@@ -38,6 +38,12 @@ impl DiskCache {
                 }
             }
         }
+        // The file name band (a `.title` marker beside the label) is drawn
+        // into the face, so a face saved without it must not come back.
+        // Carts without one keep their old key.
+        if cart.label.as_deref().is_some_and(slot_ui::borrowed_label) {
+            input.extend_from_slice(b":name-band");
+        }
         let hash=digest(&SHA256,&input);
         hash.as_ref().iter().map(|b|format!("{b:02x}")).collect()
     }

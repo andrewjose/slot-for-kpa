@@ -4143,6 +4143,9 @@ impl Engine {
                                                 }
                                             }
                                         }
+                                        // X: the cart's file name band on or off,
+                                        // as Cart Studio's File name row.
+                                        99 => self.toggle_name_band(),
                                         97 | 109 => { picker.press(Press::Back, now); }
                                         _ => {}
                                     }
