@@ -141,7 +141,7 @@ pub fn video_mode_for(root: &Path, stem: &str, platform: Platform, panel: (u32, 
 /// Settings > Systems' Screen Size: the size a system's games start at
 /// until one is given its own with L1/R1 or the pause menu. Kept in the
 /// same file as the games', under a key no ROM name starts with.
-fn system_key(platform: Platform) -> String {
+pub(crate) fn system_key(platform: Platform) -> String {
     format!("*{}", platform.dir_name().to_ascii_lowercase())
 }
 

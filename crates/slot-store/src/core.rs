@@ -173,7 +173,7 @@ pub fn core_for_platform(root: &Path, stem: &str, platform: Platform) -> Core {
         .unwrap_or_else(|| default_core(root, platform))
 }
 
-fn default_key(platform: Platform) -> &'static str {
+pub fn default_key(platform: Platform) -> &'static str {
     match platform {
         Platform::Gba => "gba",
         Platform::Gb => "gb",

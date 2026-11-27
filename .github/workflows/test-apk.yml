@@ -160,7 +160,7 @@ jobs:
           NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING")"
           CODE="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$BADGING")"
           [[ "$NAME" == *-fork."$SLOT_FORK_RUN" ]] || { echo "Unexpected versionName $NAME" >&2; exit 1; }
-          if unzip -Z -1 "$APK" | grep -q '^assets/bios/'; then echo "BIOS in the APK: refusing to publish" >&2; exit 1; fi
+          if unzip -Z -1 "$APK" | grep -qE '^assets/(bios|personal)/'; then echo "BIOS or personal files in the APK: refusing to publish" >&2; exit 1; fi
           TAG="v${NAME}"
           FILE="slot-for-android-${NAME}-arm64.apk"
           cp "$APK" "$FILE"

@@ -588,6 +588,7 @@ fn an_lcd_effect_holds_games_at_integer() {
     engine.shelves[0].carts = vec![cart(Platform::Gbc, "Color")];
     engine.shelves[0].index = 0;
     engine.video_mode = VideoMode::Aspect;
+    engine.settings.lcd_effect_gbc = LcdEffect::Off;
     let now = |engine: &Engine| engine.born.elapsed().as_millis() as u64;
 
     // Off: the game keeps its own size.
@@ -641,6 +642,7 @@ fn lcd_effect_menus_edit_the_shared_parameters() {
     };
     // Settings > Systems > Game Boy Color, on its LCD Effect row.
     let platform = Platform::Gbc;
+    engine.settings.lcd_effect_gbc = crate::settings::LcdEffect::Off;
     let row = Engine::system_page_keys(platform).iter().position(|k| *k == 67).unwrap();
     engine.overlay = ShelfOverlay::ScreenSystemSettings { platform, row };
     assert!(draws(&engine) > 0);

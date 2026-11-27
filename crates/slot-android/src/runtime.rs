@@ -1467,7 +1467,10 @@ impl Engine {
             three_two: crate::settings::Device::is_three_two(size),
         };
         let settings = PATHS.lock().unwrap_or_else(|e| e.into_inner())
-            .as_ref().map(|(root, _)| Settings::load_for_device(root, device))
+            .as_ref().map(|(root, _)| {
+                if Settings::is_fresh(root) { Settings::seed_fresh_install(root); }
+                Settings::load_for_device(root, device)
+            })
             .unwrap_or_else(|| Settings::first_install_defaults_for_device(device));
         let mut controls = PATHS.lock().unwrap_or_else(|e| e.into_inner())
             .as_ref().map(|(root, _)| crate::controls::Controls::load(root))

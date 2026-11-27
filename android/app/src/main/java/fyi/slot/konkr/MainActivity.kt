@@ -998,6 +998,8 @@ class MainActivity : Activity() {
         // Interface > Orientation, before anything is drawn: the RG Rotate
         // and the like open straight in portrait instead of turning.
         applyOrientation(SlotOrientation.saved(filesDir))
+        // The personal build's own wallpaper, on a fresh install only.
+        PersonalDefaults.seed(this)
         getSystemService(InputManager::class.java)
             ?.registerInputDeviceListener(controllerListener, Handler(Looper.getMainLooper()))
         // A staged sign-out must finish before any native HTTP worker is started.
@@ -1345,6 +1347,10 @@ class MainActivity : Activity() {
             contentDescription = "slot. boot logo"
         }
         overlay.addView(image, FrameLayout.LayoutParams(-1, -1))
+        // "AJ EDITION" under the wordmark (placed from the vector's frame).
+        if (vectorLogo != null) {
+            overlay.addView(BootEditionTag(this), FrameLayout.LayoutParams(-1, -1))
+        }
         frame.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         startupSplash = overlay
     }

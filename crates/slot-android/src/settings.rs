@@ -667,14 +667,25 @@ impl Settings {
     /// is intentionally the legacy baseline for existing, sometimes partial,
     /// settings JSON. Changing it would silently reset old users' choices.
     pub fn first_install_defaults() -> Self {
+        // Andrew's fresh-install set (2026-11-27): OLED Black (or his own
+        // wallpaper, seeded by the personal build), the clock and battery on
+        // the bottom bar with Wi-Fi and Bluetooth shown, Grid v2 with GBA
+        // colour on the GBA, Dot Matrix (Color) with Pixel Transparency on
+        // the Game Boys, every system's bezel, Run-Ahead 1. The GB/GBC core
+        // (Gambatte) and Integer size live in their own files:
+        // seed_fresh_install.
         Self {
-            wallpaper: WallpaperPick::None,
-            // The clock and battery at the top with the icons, like a phone
-            // (Siham 2026-11-09); upgrades keep theirs on the bar.
-            clock_on_top: true,
-            shader_gba: Shader::Lcd3x,
-            shader_gbc: Shader::Lcd3x,
-            shader_gb: Shader::Lcd3x,
+            wallpaper: WallpaperPick::Black,
+            clock_on_top: false,
+            show_wifi: true,
+            show_bluetooth: true,
+            shader_gba: Shader::LcdGridV2Gba,
+            shader_gbc: Shader::DotMatrixColor,
+            shader_gb: Shader::DotMatrix,
+            colour_correction_gbc: true,
+            lcd_effect_gba: LcdEffect::Off,
+            lcd_effect_gbc: LcdEffect::Transparency,
+            lcd_effect_gb: LcdEffect::Transparency,
             // Watomsk's frames, wherever the screen leaves room beside the
             // picture (3:2, 4:3, 16:9; Siham 2026-11-04).
             bezel_gbc: Bezel::Color,
@@ -691,7 +702,7 @@ impl Settings {
             // Frame Pacing NATIVE: RetroArch's loop, smoother than RetroArch
             // itself on the KONKR (1.2.3 beta22 captures).
             responsive_loop: false,
-            run_ahead_frames: 0,
+            run_ahead_frames: 1,
             home_bezel_three_two: true,
             gb_palette_twb64: true,
             gb_overlays_watomsk: true,
@@ -706,7 +717,8 @@ impl Settings {
     pub fn first_install_defaults_for_device(device: Device) -> Self {
         let mut defaults = Self::first_install_defaults();
         defaults.responsive_loop = !device.konkr;
-        if device.three_two { defaults.home_bezels_off(); }
+        // Bezels on for every system, 3:2 screens too (Andrew, 2026-11-27).
+        let _ = device.three_two;
         defaults
     }
     /// NES, SNES, Mega Drive, PlayStation and TurboGrafx-CD without an
@@ -809,7 +821,38 @@ impl Settings {
                     s.simpletex_gba_colour = true;
                 }
                 s
-            }).unwrap_or_else(|| Self::first_install_defaults_for_device(device))
+            }).unwrap_or_else(|| {
+                let mut fresh = Self::first_install_defaults_for_device(device);
+                // The personal build's own wallpaper, seeded on a fresh
+                // install (MainActivity), is the one shown.
+                if dir.join("Wallpapers/user.png").is_file() {
+                    fresh.wallpaper = WallpaperPick::File("user.png".into());
+                }
+                fresh
+            })
+    }
+
+    /// A fresh install: no settings file yet.
+    pub fn is_fresh(dir: &Path) -> bool { !dir.join(NAME).exists() }
+
+    /// The fresh-install choices kept outside the settings file: the Game
+    /// Boys' default core (Gambatte) and Screen Size (Integer). Only where
+    /// nothing was chosen yet.
+    pub fn seed_fresh_install(dir: &Path) {
+        use slot_store::Platform;
+        for platform in [Platform::Gb, Platform::Gbc] {
+            let core_set = slot_store::ini::value(dir, slot_store::DEFAULT_CORE_FILE,
+                slot_store::default_key(platform)).is_some();
+            if !core_set {
+                let _ = slot_store::write_default_core(dir, platform, slot_store::Core::Gambatte);
+            }
+            let size_set = slot_store::ini::value(dir, crate::video_mode::VIDEO_MODE_FILE,
+                &crate::video_mode::system_key(platform)).is_some();
+            if !size_set {
+                let _ = crate::video_mode::write_system_mode(dir, platform,
+                    crate::video_mode::VideoMode::Actual);
+            }
+        }
     }
     pub fn load(dir: &Path) -> Self {
         Self::load_for_device(dir, Device::KONKR)
@@ -1373,17 +1416,23 @@ mod tests {
         let s=Settings::first_install_defaults();
         use slot_store::Platform::{Gba,Gbc,Gb};
         // GENERAL / WALLPAPER / INTERFACE
-        assert_eq!(s.wallpaper,WallpaperPick::None);
+        // Andrew's set (2026-11-27): OLED Black, Wi-Fi and Bluetooth on
+        // the bar with the clock and battery at the bottom.
+        assert_eq!(s.wallpaper,WallpaperPick::Black);
         assert_eq!(s.appearance,Appearance::Dark);
         assert_eq!(s.wallpaper_tint,WallpaperTint::Off);
         assert!(!s.show_recents && !s.show_titles);
-        assert!(s.clock_on_top);
-        assert!(!s.show_wifi && !s.show_bluetooth && !s.show_integrations);
-        // SCREEN: three independent LCD3x selections, no grade, proper bezels
-        for platform in [Gba,Gbc,Gb] {
-            assert_eq!(s.shader_for(platform),Shader::Lcd3x);
-            assert!(!s.colour_for(platform));
-        }
+        assert!(!s.clock_on_top);
+        assert!(s.show_wifi && s.show_bluetooth && !s.show_integrations);
+        // SCREEN: Grid v2 + GBA colour; Dot Matrix (Color) with Pixel
+        // Transparency on the Game Boys, Color Correction on the GBC.
+        assert_eq!(s.shader_for(Gba),Shader::LcdGridV2Gba);
+        assert_eq!(s.shader_for(Gbc),Shader::DotMatrixColor);
+        assert_eq!(s.shader_for(Gb),Shader::DotMatrix);
+        assert!(!s.colour_for(Gba) && s.colour_for(Gbc) && !s.colour_for(Gb));
+        assert_eq!(s.lcd_effect_for(Gba),LcdEffect::Off);
+        assert_eq!(s.lcd_effect_for(Gbc),LcdEffect::Transparency);
+        assert_eq!(s.lcd_effect_for(Gb),LcdEffect::Transparency);
         // GBA's classic Watomsk frame is shown only off the KONKR.
         assert_eq!(s.bezel_gba,Bezel::GbaClassic);
         // GB/GBC: Watomsk's frames where the screen has room (2026-11-04).
@@ -1404,7 +1453,32 @@ mod tests {
         // EMULATION: Frame Pacing NATIVE.
         assert!(!s.show_fps);
         assert!(!s.responsive_loop);
-        assert_eq!(s.run_ahead_frames,0);
+        assert_eq!(s.run_ahead_frames,1);
+    }
+    #[test]
+    fn a_fresh_install_seeds_gambatte_and_integer_for_the_game_boys() {
+        use slot_store::Platform;
+        let root=std::env::temp_dir().join(format!("slot-fresh-seed-{}", std::process::id()));
+        let _=fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        assert!(Settings::is_fresh(&root));
+        // A GB choice of his own is kept; the GBC gets the fresh-install set.
+        crate::video_mode::write_system_mode(&root, Platform::Gb,
+            crate::video_mode::VideoMode::Stretch).unwrap();
+        Settings::seed_fresh_install(&root);
+        for platform in [Platform::Gb, Platform::Gbc] {
+            assert_eq!(slot_store::default_core(&root, platform), slot_store::Core::Gambatte);
+        }
+        assert_eq!(crate::video_mode::system_mode(&root, Platform::Gbc, (960, 640)),
+            crate::video_mode::VideoMode::Actual);
+        assert_eq!(crate::video_mode::system_mode(&root, Platform::Gb, (960, 640)),
+            crate::video_mode::VideoMode::Stretch);
+        // The personal build's seeded wallpaper is the one shown.
+        fs::create_dir_all(root.join("Wallpapers")).unwrap();
+        fs::write(root.join("Wallpapers/user.png"), b"png").unwrap();
+        assert_eq!(Settings::load_for_device(&root, Device::KONKR).wallpaper,
+            WallpaperPick::File("user.png".into()));
+        let _=fs::remove_dir_all(&root);
     }
     #[test]
     fn gb_and_gbc_overlays_left_off_move_to_watomsk_once() {
@@ -1429,14 +1503,12 @@ mod tests {
     #[test]
     fn every_screen_starts_with_lcd3x_on_a_fresh_install() {
         let konkr=Settings::first_install_defaults_for_device(Device::KONKR);
-        let mut plain=Settings::first_install_defaults();
-        plain.home_bezels_off();
-        assert_eq!(konkr, plain);
+        // Every system's bezel on, the KONKR's 3:2 too (Andrew, 2026-11-27).
+        assert_eq!(konkr, Settings::first_install_defaults());
         let other=Settings::first_install_defaults_for_device(
             Device { konkr: false, retroid_pocket_classic: false, three_two: false });
-        for shader in [other.shader_gba, other.shader_gb, other.shader_gbc] {
-            assert_eq!(shader, Shader::Lcd3x);
-        }
+        assert_eq!((other.shader_gba, other.shader_gb, other.shader_gbc),
+            (Shader::LcdGridV2Gba, Shader::DotMatrix, Shader::DotMatrixColor));
         assert!(other.responsive_loop, "RESPONSIVE everywhere but on the KONKR");
         assert!(Settings::first_install_defaults_for_device(Device::RPC).responsive_loop);
         assert!(!konkr.responsive_loop, "the KONKR keeps NATIVE");
@@ -1834,13 +1906,15 @@ mod tests {
     fn home_consoles_start_without_an_overlay_on_three_two_screens() {
         assert!(Device::is_three_two((960, 640)) && Device::is_three_two((1620, 1080)));
         assert!(!Device::is_three_two((1240, 1080)) && !Device::is_three_two((1920, 1080)));
+        // A fresh install now shows every system's bezel, 3:2 included
+        // (Andrew, 2026-11-27); only a beta's saved overlays go off once.
         let konkr=Settings::first_install_defaults_for_device(Device::KONKR);
         assert_eq!((konkr.bezel_nes,konkr.bezel_snes,konkr.bezel_md),
-            (Bezel::None,Bezel::None,Bezel::None));
+            (Bezel::Nes,Bezel::Snes,Bezel::GenesisClassic));
         let rpc=Settings::first_install_defaults_for_device(Device::RPC);
         assert_eq!((rpc.bezel_nes,rpc.bezel_snes,rpc.bezel_md),
             (Bezel::Nes,Bezel::Snes,Bezel::GenesisClassic));
-        assert_eq!((konkr.bezel_psx,konkr.bezel_tgcd),(Bezel::None,Bezel::None));
+        assert_eq!((konkr.bezel_psx,konkr.bezel_tgcd),(Bezel::Psx,Bezel::Turbografx));
         assert_eq!((rpc.bezel_psx,rpc.bezel_tgcd),(Bezel::Psx,Bezel::Turbografx));
         // A beta's saved overlays go off once on 3:2; a later choice stays.
         let root=std::env::temp_dir().join(format!("slot-home-bezel-{}",std::process::id()));

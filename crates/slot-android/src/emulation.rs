@@ -497,7 +497,8 @@ mod tests {
 
     #[test]
     fn in_game_lcd_effect_blending_and_dither_stay_the_games() {
-        let globals = Settings::first_install_defaults();
+        let globals = Settings { lcd_effect_gbc: settings::LcdEffect::Off,
+            ..Settings::first_install_defaults() };
         let mut profile = EmulationProfile::from_settings(&globals);
         assert!(profile.change_visual_and_gameplay(&globals, Platform::Gbc, 67, true));
         assert!(profile.change_visual_and_gameplay(&globals, Platform::Gbc, 61, true));
@@ -522,7 +523,8 @@ mod tests {
         let fresh = Settings::first_install_defaults();
         let game = EmulationProfile::from_settings(&fresh);
         assert!(!game.responsive_loop);
-        assert_eq!(game.run_ahead_frames, 0);
+        // Run-Ahead 1 on a fresh install (Andrew, 2026-11-27).
+        assert_eq!(game.run_ahead_frames, 1);
         let mut responsive = fresh.clone();
         responsive.responsive_loop = true;
         responsive.run_ahead_frames = 1;
