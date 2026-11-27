@@ -3950,6 +3950,9 @@ impl Engine {
                                         let platform = self.current_cart_platform();
                                         let on = !self.settings.bfi_for(platform);
                                         self.settings.set_bfi_for(platform, on);
+                                        // BFI paces each dark frame to the display: it
+                                        // needs Native frame pacing (Andrew, 2026-11-23).
+                                        if on { self.force_native_pacing(); }
                                         self.persist_settings();
                                     }
                                     Some(key) => self.change_setting(key, code != 21),
@@ -5719,6 +5722,26 @@ impl Engine {
         }, time);
         self.save_game_sun(profile, &uri, core);
     }
+    /// Frame Pacing to Native: the system default, and this game's own
+    /// setting when it has one (Black Frame Insertion needs it).
+    fn force_native_pacing(&mut self) {
+        self.settings.responsive_loop = false;
+        if let Some(mut profile) = self.game_emulation.filter(|p| p.responsive_loop) {
+            profile.responsive_loop = false;
+            let uri = self.selected_rom_uri();
+            let core = self.selected_emulation_core();
+            if let (Some(uri), Some((root, _))) = (uri,
+                PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref())
+            {
+                if let Err(error) = profile.save(root, &uri, core) {
+                    set_error_message("Couldn't save this game's settings.", &error);
+                    return;
+                }
+            }
+            self.game_emulation = Some(profile);
+        }
+    }
+
     fn change_game_motion(&mut self, up: bool) {
         let Some(uri) = self.selected_rom_uri() else { return; };
         let core = self.selected_emulation_core();

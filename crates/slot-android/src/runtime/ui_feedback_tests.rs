@@ -784,3 +784,12 @@ fn start_pictures_come_back_from_their_cache() {
     assert!(StartJob::Shadow(None).cache_key(scale).is_none());
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn black_frame_insertion_on_sets_native_frame_pacing() {
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    engine.settings.responsive_loop = true;
+    engine.force_native_pacing();
+    assert!(!engine.settings.responsive_loop, "BFI needs Native frame pacing");
+}
