@@ -177,9 +177,9 @@ class OfficialArtMatcherTest {
         val japan = Case("GBA", "x", "Kururin (Japan)", "22222222")
         fun pick(name: String, preferred: String?) = OfficialArtMatcher.fromCatalog(
             "GBA", name, header(), catalog(listOf(usa, japan)), preferred) { "GBA/art/$it.png" }
-        assertEquals("22222222", pick("Kururin [T-En].gba", "JAPAN"))
-        assertNull("both regions, no preference: ambiguous", pick("Kururin.gba", null))
-        assertEquals("the file's own region wins", "11111111", pick("Kururin (USA).gba", "JAPAN"))
+        assertEquals("22222222", pick("Kururin [T-En by Someone v1.0]", "JAPAN"))
+        assertNull("both regions, no preference: ambiguous", pick("Kururin", null))
+        assertEquals("the file's own region wins", "11111111", pick("Kururin (USA)", "JAPAN"))
     }
 
     @Test fun sourceNoIntroMetadataIsParsedCorrectly() {

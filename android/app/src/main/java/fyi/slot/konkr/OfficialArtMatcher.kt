@@ -72,7 +72,8 @@ internal object OfficialArtMatcher {
         revisionTag.find(name)?.groupValues?.get(1)?.toIntOrNull()
 
     internal fun titleKey(name: String): String {
-        val base = name.substringBefore(" (").trim()
+        // "Kururin [T-En by …]": a translation's tags end the title too.
+        val base = name.substringBefore(" (").substringBefore(" [").trim()
         val flat = Normalizer.normalize(base, Normalizer.Form.NFKD)
             .lowercase(Locale.ROOT).replace(mark, "")
         return flat.replace(separator, " ").trim()
