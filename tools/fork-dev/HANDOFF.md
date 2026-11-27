@@ -3,7 +3,7 @@
 _Last updated 2026-11-27._
 
 ## 0. Resume here
-- **Current build:** `slot 2.2.2-fork.29 - PS1 DualShock and memory cards, curvature, bands, PSP (personal)` (BIOS inside: never upload). Installs over fork.26 as `fyi.slot.konkr.diag`; later releases come through the in-app updater.
+- **Current build:** `slot 2.2.2-fork.32 - AJ EDITION, portrait start, fresh-install defaults (personal)` (BIOS + Kingdom Hearts wallpaper inside: never upload). Personal APK = release asset + `tooling\add_bios.py --wallpaper "personal assets\default-wallpaper.png"` + zipalign + v2 sign. CI refuses an APK with assets/bios/ or assets/personal/.
 - **fork.27 + fork.29 (2026-11-26/27, Andrew: "Do all the todos"), untested on a device:** PS1 DualShock sticks/L3/R3, PS1 Controller/Vibration/Memory Card 1/2 settings (cards were empty because slot. never set `pcsx_rearmed_memcard1/2`), CRT Curvature (CRT-Pi, GDV, Geom Deluxe, Fakelottes), band logos for PS1/TG/PCE/NES/SNES (`tools/watomsk-overlays/bands.py`), NES/SNES Integer (No Crop) and 4:3 on narrow screens, PSP launcher shelf (hands games to PPSSPP: Legacy, Gold, then store package), plus queue items 2, 10, 11, 12, 14 (BFI->Native pacing, SELECT menu on one-core systems, disc-hack name band, Orientation, LCD effects at any size). fork.28 failed one Kotlin test (CSO now PSP), fixed in 29. Checklist in the build's `What's new.txt`.
 - **Run 26 new:** updater reads andrewjose/slot-for-kpa, versions 2.2.2-fork.N / 357000+N, CI publishes each run as a release (run 25 failed on the version-read step; fixed).
 - **Run 23 new (untested):** X in the SELECT core menu toggles the selected cart's `.title` marker, the same as Cart Studio's File name row (`pr/label-name-toggle`). The cart face disk cache now keys on the marker, so a toggled face doesn't come back stale after a restart (this also affected run 20's Cart Studio row). PS1/TG-CD have one core and no SELECT menu, so for them it's Cart Studio only.
@@ -19,9 +19,16 @@ _Last updated 2026-11-27._
 - **Motion test ROMs:** `motion test ROMs\` (WarioWare: Twisted! USA, Korokoro Puzzle JP, Kirby Tilt 'n' Tumble USA; Yoshi Topsy-Turvy isn't in his GBA set), also placed in `_NEEDS-PLAYTEST\gba` and `\gbc` by `make_needs_playtest.py` (entries `slot-motion-gba` / `slot-motion-gbc`).
 - **Queue status (2026-11-27):** items 1, 2, 3, 5, 8-15 done (see above). Item 6 done as the launcher route (PSP shelf -> PPSSPP); a real libretro PPSSPP still needs hardware-render support. Still open:
   4. RP Nova centre button: waiting on `adb logcat -s SlotKONKR` of a few presses.
-  7. N64 / Dreamcast: same blocker as libretro PSP. The PSP hand-off (`Platform::external()`, `HANDOFF` -> `nativePollHandoff`, `PspHandoff.kt`) extends to them once Andrew names his apps (e.g. Mupen64Plus FZ, Redream/Flycast).
+  7. N64 / Dreamcast: ON HOLD (Andrew, 2026-11-26: wait). Decided: other systems get launcher shelves only (hand-off to standalone apps like the PSP), no GPU-drawn libretro cores. Needs his app picks when he resumes. Same blocker as libretro PSP. The PSP hand-off (`Platform::external()`, `HANDOFF` -> `nativePollHandoff`, `PspHandoff.kt`) extends to them once Andrew names his apps (e.g. Mupen64Plus FZ, Redream/Flycast).
   - Maybe: a "picture at the top" choice without a bezel (item 9's extra).
-- **Next:** Andrew installs fork.29 by hand (or OTA from fork.26), then works through `What's new.txt`.
+- **Done in fork.32 (2026-11-27), untested on a device:** the six queued to-dos.
+  1. Portrait: `PortraitActivity` (subclass of MainActivity, manifest screenOrientation=portrait, disabled by default) is the only launcher entry while Orientation = Portrait (`SlotOrientation.useLauncher`, also synced in onCreate); MainActivity is manifest landscape again. Applies from the next launch. SlotHomeActivity starts whichever entry is enabled.
+  2. Fresh-install defaults: `Settings::first_install_defaults` (+ `seed_fresh_install` writes Gambatte and Integer for GB/GBC into Config/default_core.ini and video_mode.ini when unset). 3:2 screens no longer turn the home bezels off on a fresh install.
+  3. Wallpaper: `PersonalDefaults.seed` copies assets/personal/wallpaper.png to Wallpapers/user.png on a fresh install; the fresh settings then pick File(user.png).
+  4. Emulation bar: `menu_cursor()` (was a hard-coded 3); test `settings_pages_place_the_bar_by_their_own_row_count`.
+  5. L1/R1 Rewind/FF default on gb/gbc/nes/tgcd (`Controls::shoulders`), `Hotkeys.shoulders` so the custom-hotkey path and labels follow.
+  6. `BootEditionTag.kt` draws AJ EDITION from the wordmark vector's frame.
+- **Next:** Andrew installs fork.32 and works through its `What's new.txt`.
 - **No upstream PRs (Andrew, 2026-11-23):** the fork no longer lines up with upstream. Work goes straight onto `build/test-apk-v2.2.2`, the fork's main line; the `pr/*` branches are history.
 - **Releases (from run 25):** every push to the build branch publishes GitHub release `v2.2.2-fork.N` (N = CI run number; versionCode 357000 + N) with `slot-for-android-2.2.2-fork.N-arm64.apk` + `SHA256SUMS.txt`, and notes listing the commits since the last fork release. The in-app updater (`SlotUpdater.kt`) reads only `andrewjose/slot-for-kpa` and offers each newer run. The CI step refuses an APK containing `assets/bios/`. The personal APK (BIOS added, same test key, same version) is built from that release asset and never published. BIOS seeded once stay in app storage across OTA updates. Commits that don't change the app use `[skip ci]`. Runs 19-23 still point at upstream, so the first move onto the fork channel is installing run 25 by hand.
 - **Logs:** `adb logcat -c`, launch, `adb logcat -d > E:\Projects\slot-for-kpa\slot-log.txt`; failures read `SlotKONKR: Couldn't start <core>. (<reason>)`.
@@ -80,7 +87,10 @@ _Last updated 2026-11-27._
 | 26 | First fork release `v2.2.2-fork.26`: OTA from the fork | `archived\` |
 | 27 | Queue items 2, 10, 11, 12, 14 plus PS1 pad/cards, curvature, bands, NES/SNES sizes (public release, no personal build) | — |
 | 28 | Failed a Kotlin test (CSO) | — |
-| 29 | fork.27 plus the PSP launcher shelf | Top level |
+| 29 | fork.27 plus the PSP launcher shelf | `archived\` |
+| 30 | fork.29 plus L1/R1 Rewind / Fast Forward (L2/R2 screen size) | `archived\` |
+| 31 | Kotlin compile error (Context in the poll loop) | — |
+| 32 | AJ EDITION: portrait start, fresh-install defaults + personal wallpaper, Emulation bar fix, L1/R1 Rewind/FF default, boot screen tag | Top level |
 
 ## 4. Still to verify on a device
 - Run 12 installs over run 11, and the BIOS show up in slot.'s BIOS folder.
