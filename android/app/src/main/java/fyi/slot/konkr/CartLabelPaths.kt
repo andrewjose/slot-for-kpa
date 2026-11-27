@@ -28,18 +28,59 @@ internal object CartLabelPaths {
         } catch (_: Exception) {}
     }
 
-    /** Whether a label named `official` is another game's than `file`'s:
-     *  the names differ once tags, case and punctuation are dropped. */
+    /** Whether a label named `official` is another game's than `file`'s: the
+     *  names differ once case, punctuation and standard dump tags are
+     *  dropped. Standard tags are regions, languages, Rev N, vX.Y, Disc N,
+     *  Track N, serials, re-release labels and the like; any other tag
+     *  ("QoL v1.2", "T-En by ...", "Undub", "English") marks a hack or a
+     *  translation, so it keeps the name apart (Andrew, 2026-11-24). */
     fun differs(file: String, official: String): Boolean = bare(file) != bare(official)
 
-    private fun bare(name: String): String {
+    private val REGIONS = setOf(
+        "usa", "japan", "europe", "world", "asia", "korea", "australia", "brazil", "canada", "china",
+        "france", "germany", "italy", "spain", "netherlands", "sweden", "taiwan", "hong kong", "uk",
+        "russia", "scandinavia", "latin america",
+        "en", "ja", "fr", "de", "es", "it", "nl", "pt", "sv", "no", "da", "fi", "zh", "ko", "pl", "ru",
+        "pt-br", "u", "j", "e", "jp", "us", "eu", "ntsc", "pal", "ntsc-u", "ntsc-j")
+
+    private val STANDARD = listOf(
+        "rev\\s*[0-9a-z.]+", "v\\d+(\\.\\d+)*[a-z]?", "disc\\s*\\d+(\\s*of\\s*\\d+)?", "track\\s*\\d+",
+        "beta\\s*\\d*", "proto\\s*\\d*", "demo", "sample", "kiosk", "unl", "alt\\s*\\d*", "!",
+        "[abhfno]\\d*", "[a-z]{4}-?\\d{5}", "\\d{4}-\\d{2}-\\d{2}",
+        "greatest hits", "platinum", "player's choice", "the best", "psone books", "sega classic", "np",
+        "virtual console", "switch online", "genteiban", "limited edition", "reprint", "sgb enhanced",
+        "gb compatible", "cgb\\+sgb enhanced", "rumble version", "aftermarket",
+    ).map { Regex(it) }
+
+    /** A dump tag that says nothing about which game it is. */
+    internal fun standardTag(tag: String): Boolean {
+        val t = tag.trim().lowercase()
+        if (t.split(',').all { it.trim() in REGIONS }) return true
+        return STANDARD.any { it.matches(t) }
+    }
+
+    private val EXTENSION = Regex("^(.*)\\.([A-Za-z0-9]{1,4})$")
+
+    internal fun bare(name: String): String {
+        // Only a real extension is dropped: "Dr. Mario" keeps its "Dr."
+        val stem = EXTENSION.matchEntire(name)?.groupValues?.get(1) ?: name
         var depth = 0
         val out = StringBuilder()
-        for (ch in name.substringBeforeLast('.').let { if (it.isEmpty()) name else it }) {
+        val tag = StringBuilder()
+        for (ch in stem) {
             when (ch) {
-                '(', '[' -> depth++
-                ')', ']' -> depth = maxOf(0, depth - 1)
-                else -> if (depth == 0 && ch.isLetterOrDigit()) out.append(ch.lowercaseChar())
+                '(', '[' -> { if (depth == 0) tag.setLength(0); depth++ }
+                ')', ']' -> {
+                    depth = maxOf(0, depth - 1)
+                    if (depth == 0 && !standardTag(tag.toString())) {
+                        out.append('#')
+                        out.append(tag.toString().lowercase().filter { it.isLetterOrDigit() })
+                    }
+                }
+                else -> {
+                    if (depth > 0) tag.append(ch)
+                    else if (ch.isLetterOrDigit()) out.append(ch.lowercaseChar())
+                }
             }
         }
         return out.toString()
