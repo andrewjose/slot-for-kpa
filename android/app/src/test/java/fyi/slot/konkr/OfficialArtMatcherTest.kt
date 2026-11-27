@@ -61,7 +61,7 @@ class OfficialArtMatcherTest {
                       available: (String) -> String? = { "GBA/art/$it.png" }): String? =
         OfficialArtMatcher.fromCatalog(
             example.platform, example.romName, header(example.gameCode),
-            catalog(entries), available,
+            catalog(entries), artworkPath = available,
         )
 
     @Test fun allTenTypesOfPatchedGamesResolveWithoutPatchedCrcTables() {
@@ -170,6 +170,16 @@ class OfficialArtMatcherTest {
         assertNull(OfficialArtMatcher.fromCatalog(
             "SNES", mother.romName, header(), catalog(listOf(mother)),
         ) { "SNES/art/other.png" })
+    }
+
+    @Test fun aTranslationWithoutARegionPrefersTheJapaneseRelease() {
+        val usa = Case("GBA", "x", "Kururin (USA)", "11111111")
+        val japan = Case("GBA", "x", "Kururin (Japan)", "22222222")
+        fun pick(name: String, preferred: String?) = OfficialArtMatcher.fromCatalog(
+            "GBA", name, header(), catalog(listOf(usa, japan)), preferred) { "GBA/art/$it.png" }
+        assertEquals("22222222", pick("Kururin [T-En].gba", "JAPAN"))
+        assertNull("both regions, no preference: ambiguous", pick("Kururin.gba", null))
+        assertEquals("the file's own region wins", "11111111", pick("Kururin (USA).gba", "JAPAN"))
     }
 
     @Test fun sourceNoIntroMetadataIsParsedCorrectly() {
