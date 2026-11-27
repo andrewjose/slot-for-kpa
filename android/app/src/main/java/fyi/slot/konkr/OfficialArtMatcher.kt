@@ -143,6 +143,9 @@ internal object OfficialArtMatcher {
         romTitle: String,
         header: ByteArray,
         catalog: Catalog,
+        /** Japan for a translation or a Japanese cart's header, when the
+         *  file name has no region: that release's label wins a tie. */
+        preferredRegion: String? = null,
         artworkPath: (String) -> String?,
     ): String? {
         if (platform != catalog.platform) return null
@@ -191,6 +194,8 @@ internal object OfficialArtMatcher {
                 score += 5
             }
             if (requestedEdition == null && edition != null) score -= 35
+            if (expectedRegion == null && preferredRegion != null &&
+                entry.region == preferredRegion) score += 8
             // On aftermarket software the ROM's patch revision may differ
             // from the official game's version. Prefer an exact underlying
             // version when known, otherwise resolve version-only variants

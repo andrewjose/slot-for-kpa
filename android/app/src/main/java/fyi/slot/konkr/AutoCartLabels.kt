@@ -246,6 +246,8 @@ internal object AutoCartLabels {
                 if (!shouldContinue()) break
             }
             var outcome = "NOT_FOUND"
+            // Found by the game's name, not this cart's own checksum.
+            var nameMatched = false
             try {
                 val crc = CartStudioCatalog.cached(context, rom)
                     ?: CartStudioCatalog.identify(context, rom)
@@ -295,6 +297,7 @@ internal object AutoCartLabels {
                     val path = resolved?.let {
                         OfficialArtResolver.artPath(index, rom.platform, it)
                     }
+                    nameMatched = path != null && resolved != crc.hex
                     if (path == null) {
                         // No checksum or exact name knows it (a hack, a
                         // translation, a renamed dump): the game it most
@@ -367,8 +370,12 @@ internal object AutoCartLabels {
                     outcome = "EXISTS"
                     continue
                 }
-                // A guess is another game's label: the shelf adds the file name.
-                CartLabelPaths.markBorrowed(target, outcome == "GUESSED")
+                // A guess is another game's label, and a translation found by
+                // its game's name wears the Japanese one: the shelf adds the
+                // file name (Andrew, 2026-11-27).
+                CartLabelPaths.markBorrowed(target, outcome == "GUESSED" ||
+                    (nameMatched && CartGuess.translationBand(rom.platform,
+                        rom.filename.ifBlank { rom.title }, crc.head)))
                 val atomic = AtomicFile(target)
                 val stream = atomic.startWrite()
                 try {

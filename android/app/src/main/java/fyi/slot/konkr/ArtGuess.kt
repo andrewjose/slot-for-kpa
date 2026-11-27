@@ -83,6 +83,17 @@ internal object ArtGuess {
 
     fun discOf(name: String): Int? = discTag.find(name)?.groupValues?.get(1)?.toIntOrNull()
 
+    // A fan translation's own tags: [T-En by …], [T+Eng1.01_…], T-Eng,
+    // "(English v1.0)", "translation", "(patched)". No-Intro's "(En)" is an
+    // official release's language, never one of these.
+    private val translationTag = Regex(
+        """\[T[-+]?\s*En(?:g|\b)|\bT[-+]En(?:g|\b)|\(English\b|\bEnglish\s+(?:v\d|patch|translation)|\btranslat(?:ed|ion)\b|\(patched\)""",
+        RegexOption.IGNORE_CASE)
+
+    /** The file says it is a fan translation (Andrew, 2026-11-27: his
+     *  translations of Japan-only games, often renamed in English). */
+    fun translated(name: String): Boolean = translationTag.containsMatchIn(name)
+
     fun regionOf(name: String): String? {
         regionTag.find(name)?.let { return it.groupValues[1].uppercase(Locale.ROOT) }
         return when (shortRegion.find(name)?.groupValues?.get(1)) {
@@ -180,7 +191,10 @@ internal object ArtGuess {
     fun rank(clues: Clues, known: List<Known>, limit: Int = 5): List<Pick> {
         val titles = (listOf(titleKey(clues.filename)) + clues.titles.map(::titleKey))
             .filter { it.isNotBlank() }.distinct()
+        // A fan translation with no region in its name is of a Japanese
+        // release: its box art first (Andrew, 2026-11-27).
         val region = clues.region ?: regionOf(clues.filename)
+            ?: if (translated(clues.filename)) "JAPAN" else null
         val disc = discOf(clues.filename)
         val scored = ArrayList<Pick>()
         for (k in known) {

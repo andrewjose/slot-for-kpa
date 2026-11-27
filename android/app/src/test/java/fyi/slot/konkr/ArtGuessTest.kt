@@ -1,6 +1,8 @@
 package fyi.slot.konkr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -50,8 +52,11 @@ class ArtGuessTest {
 
     @Test fun theDiscNumberAndRegionAreKept() {
         assertEquals("Fear Effect (USA) (Disc 2)", best("Fear Effect (USA) (Disc 2).chd", psx))
-        assertEquals("Ace Combat 3 - Electrosphere (USA)",
+        // An English patch of the Japanese release wears its Japanese box.
+        assertEquals("Ace Combat 3 - Electrosphere (Japan) (Disc 1)",
             best("Ace Combat 3 - Electrosphere (English v1.1)(Disc 1)[LoadWordTeam].chd", psx))
+        assertEquals("Ace Combat 3 - Electrosphere (USA)",
+            best("Ace Combat 3 - Electrosphere (USA).chd", psx))
     }
 
     @Test fun nothingInCommonIsNoLabel() {
@@ -66,5 +71,55 @@ class ArtGuessTest {
         assertEquals("SLUS-00067", parsed[0].serial)
         assertEquals("1A2B3C4D", parsed[0].crc)
         assertEquals("Ys I _ II_ The Book", ArtGuess.thumbnailName("Ys I & II: The Book"))
+    }
+
+    @Test fun fanTranslationsAreTold() {
+        for (name in listOf(
+            "Bahamut Lagoon (Japan) [T-En by Tom & Near v1.2].sfc",
+            "Seiken Densetsu 3 (J) [T+Eng1.01_NCorlett+LNFT].smc",
+            "Rhythm Tengoku (English v1.0).zip",
+            "Mother 1+2 (Japan) (patched).gba",
+            "Ace Combat 3 - Electrosphere (English v1.1)(Disc 1)[LoadWordTeam].chd",
+            "Gargoyle's Quest II - The Demon Darkness (Japan) [T-En by Bailli v1.0] [n].7z",
+        )) assertTrue(name, ArtGuess.translated(name))
+        for (name in listOf(
+            "Treasure Hunter G.zip",
+            "Mother 3 (Japan).gba",
+            "Final Fantasy Tactics Advance (USA, Australia).gba",
+            "Pokemon - Crystal Version (USA, Europe) (Rev 1).gbc",
+            "Puyo Puyo (Japan) (En,Ja).gb",
+        )) assertFalse(name, ArtGuess.translated(name))
+    }
+
+    @Test fun aRenamedTranslationTakesTheJapaneseBox() {
+        val sfc = listOf(k("Tales of Phantasia (USA)"), k("Tales of Phantasia (Japan)"))
+        assertEquals("Tales of Phantasia (Japan)",
+            ArtGuess.rank(ArtGuess.Clues("Tales of Phantasia [T-En by DeJap v1.2].sfc"), sfc, 1)
+                .first().known.name)
+        assertEquals("Tales of Phantasia (USA)",
+            ArtGuess.rank(ArtGuess.Clues("Tales of Phantasia.sfc"), sfc, 1).first().known.name)
+    }
+
+    @Test fun theCartsOwnHeaderNamesItsRelease() {
+        fun gb(destination: Int) = ByteArray(0x150).also { head ->
+            "KAERUNOTAME".toByteArray().copyInto(head, 0x134)
+            head[0x14A] = destination.toByte()
+        }
+        assertEquals("JAPAN", CartGuess.headerRegion(Systems.GB, gb(0)))
+        assertNull(CartGuess.headerRegion(Systems.GB, gb(1)))
+        assertNull("no title: not a header", CartGuess.headerRegion(Systems.GB, ByteArray(0x150)))
+        fun gba(code: String) = ByteArray(0x150).also { code.toByteArray().copyInto(it, 0xAC) }
+        assertEquals("JAPAN", CartGuess.headerRegion(Systems.GBA, gba("A3UJ")))
+        assertEquals("USA", CartGuess.headerRegion(Systems.GBA, gba("AXVE")))
+        // The file name's region first; a translation is Japanese.
+        assertEquals("USA", CartGuess.preferredRegion(Systems.GBA, "Mother 3 (USA).gba", gba("A3UJ")))
+        assertEquals("JAPAN", CartGuess.preferredRegion(Systems.GBA, "Mother 3 [T-En].gba", gba("AXVE")))
+        assertEquals("JAPAN", CartGuess.preferredRegion(Systems.GBA, "Mother 3.gba", gba("A3UJ")))
+        // The file name shows on a translation's label; a Japanese cart
+        // renamed without its region counts too.
+        assertTrue(CartGuess.translationBand(Systems.GBA, "Mother 3.gba", gba("A3UJ")))
+        assertTrue(CartGuess.translationBand(Systems.GB, "Kaeru (Japan) [T-En].gb", gb(0)))
+        assertFalse(CartGuess.translationBand(Systems.GBA, "Mother 3 (Japan).gba", gba("A3UJ")))
+        assertFalse(CartGuess.translationBand(Systems.GBA, "Metroid Fusion.gba", gba("AMTE")))
     }
 }

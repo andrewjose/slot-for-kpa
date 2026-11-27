@@ -123,7 +123,8 @@ internal object HomeCartLabels {
             "fc", "md_jp" -> listOf("jp")
             "snes_us", "md_ea" -> listOf("us")
             // Super Famicom labels have the PAL shape.
-            "snes" -> if (regions?.first == true && regions.third != true)
+            "snes" -> if ((regions?.first ?: (rom.region == "J" || ArtGuess.translated(
+                    rom.filename.ifBlank { rom.title }))) && regions?.third != true)
                 listOf("jp") + europe + listOf("wor") else europe + listOf("jp", "wor")
             else -> if (regions?.second == true && regions.third != true)
                 listOf("us", "wor") + europe + listOf("ss") else europe + listOf("us", "wor", "ss")

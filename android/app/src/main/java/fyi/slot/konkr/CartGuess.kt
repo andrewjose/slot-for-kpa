@@ -40,6 +40,41 @@ internal object CartGuess {
         return code.map(Int::toChar).joinToString("")
     }
 
+    /**
+     * The release the cart's own header names: a Game Boy's destination
+     * byte (0x14A: 0 = Japan), a GBA game code's last letter (AFEJ = Japan).
+     * A translation patch leaves both as they were.
+     */
+    fun headerRegion(platform: String, head: ByteArray?): String? = when (platform) {
+        Systems.GB, Systems.GBC -> head?.takeIf { it.size > 0x14A && headerTitle(platform, it) != null }
+            ?.let { if (it[0x14A].toInt() == 0) "JAPAN" else null }
+        Systems.GBA -> when (gameCode(platform, head)?.last()) {
+            'J' -> "JAPAN"
+            'E' -> "USA"
+            'P' -> "EUROPE"
+            else -> null
+        }
+        else -> null
+    }
+
+    /**
+     * The region whose box art a cart should wear: its file name's, else
+     * Japan for a fan translation (they are of Japan-only games), else its
+     * header's.
+     */
+    fun preferredRegion(platform: String, filename: String, head: ByteArray?): String? =
+        ArtGuess.regionOf(filename)
+            ?: if (ArtGuess.translated(filename)) "JAPAN" else headerRegion(platform, head)
+
+    /**
+     * A label found by the game's name for a cart its checksum doesn't match
+     * shows the file name too when the cart is a translation: tagged as one,
+     * or a Japanese cart renamed without its region (Andrew, 2026-11-27).
+     */
+    fun translationBand(platform: String, filename: String, head: ByteArray?): Boolean =
+        ArtGuess.translated(filename) ||
+            (ArtGuess.regionOf(filename) == null && headerRegion(platform, head) == "JAPAN")
+
     fun candidates(
         context: Context, platform: String, filename: String, head: ByteArray?,
         headerTitles: List<String> = emptyList(), region: String? = null,
@@ -50,7 +85,8 @@ internal object CartGuess {
             filename = filename,
             titles = (listOfNotNull(headerTitle(platform, head)) + headerTitles).filter { it.isNotBlank() },
             serial = gameCode(platform, head),
-            region = region?.uppercase()?.takeIf { it.isNotBlank() },
+            region = region?.uppercase()?.takeIf { it.isNotBlank() }
+                ?: preferredRegion(platform, filename, head),
         )
         val picks = ArtGuess.rank(clues, known.filter { it.crc != null }, TRIES)
         if (picks.isNotEmpty()) {

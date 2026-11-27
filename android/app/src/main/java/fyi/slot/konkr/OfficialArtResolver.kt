@@ -21,6 +21,7 @@ internal object OfficialArtResolver {
         if (dat == null) return null
         return OfficialArtMatcher.fromCatalog(
             rom.platform, rom.title, fingerprint.head, dat,
+            CartGuess.preferredRegion(rom.platform, rom.filename.ifBlank { rom.title }, fingerprint.head),
         ) { candidate -> artPath(index, rom.platform, candidate) }
     }
 }
