@@ -546,7 +546,7 @@ enum LcdFrom {
     Pause { row: usize },
 }
 
-const MENU_TEXT: [&str; 149] = [
+const MENU_TEXT: [&str; 150] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -696,6 +696,7 @@ const MENU_TEXT: [&str; 149] = [
     "PS1 Vibration",                      // 146
     "PS1 Memory Card 1",                  // 147
     "PS1 Memory Card 2",                  // 148
+    "Curvature",                          // 149
 ];
 /// MENU_TEXT's Sensitivity row (tilt and gyro games).
 const SENSITIVITY_TEXT: usize = 143;
@@ -744,7 +745,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 145] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 148] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -785,7 +786,14 @@ const SETTING_VALUE_NAMES: [&str; 145] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                // 137: Interface > Orientation.
                                "LANDSCAPE", "PORTRAIT", "FOLLOW DEVICE",
                                // 140: Emulation > PS1 rows.
-                               "DUALSHOCK", "STANDARD", "PER GAME", "SHARED", "PER DISC"];
+                               "DUALSHOCK", "STANDARD", "PER GAME", "SHARED", "PER DISC",
+                               // 145: Curvature (OFF is 5).
+                               "LIGHT", "MEDIUM", "STRONG"];
+/// SETTING_VALUE_NAMES' first Curvature value: Light, Medium, Strong.
+const CURVE_VALUE: usize = 145;
+/// The Curvature row (MENU_TEXT) and its setting key.
+const CURVE_ROW: usize = 149;
+const CURVE_KEY: usize = 96;
 /// SETTING_VALUE_NAMES' PS1 values: DualShock, Standard, then the cards'.
 const PSX_VALUE: usize = 140;
 /// Settings > Emulation: its rows (MENU_TEXT) and their setting keys.
@@ -908,6 +916,7 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         91 => ORIENTATION_VALUE + settings.orientation as usize,
         92 => PSX_VALUE + if settings.psx_dualshock { 0 } else { 1 },
         93 => if settings.psx_vibration { 4 } else { 5 },
+        CURVE_KEY => match settings.curvature { 0 => 5, level => CURVE_VALUE + level as usize - 1 },
         94 | 95 => {
             use crate::settings::PsxCard;
             match if key == 94 { settings.psx_card1 } else { settings.psx_card2 } {
@@ -3952,6 +3961,10 @@ impl Engine {
                                 },
                                 96 if self.pause_screen_page_key(row).is_some_and(lcd_key) =>
                                     self.open_lcd(LcdFrom::Pause { row }),
+                                21 | 22 if self.pause_screen_page_key(row) == Some(CURVE_KEY) => {
+                                    self.change_setting(CURVE_KEY, code == 22);
+                                    self.redraw_paused_game();
+                                },
                                 21 | 22 => if let Some(key)=self.pause_screen_page_key(row) {
                                     self.change_game_screen_or_gameplay(key,code==22);
                                     // Shader keys can switch the core's own GBA Color.
@@ -4943,6 +4956,7 @@ impl Engine {
         let lcd = self.game_lcd_effect(self.current_cart_platform());
         self.gpu.set_lcd_effect(lcd.gpu());
         self.gpu.set_lcd_params(self.settings.lcd_params.shader());
+        self.gpu.set_curvature(self.settings.curve());
         let sunlight = lcd == crate::settings::LcdEffect::Sunlight && self.game.is_some();
         if sunlight != self.tilt_on {
             self.tilt_on = sunlight;
@@ -5297,13 +5311,23 @@ impl Engine {
     /// Blending, then Frame Blending.
     fn pause_screen_page_rows(&self) -> Vec<usize> {
         let mut rows = self.pause_screen_rows().to_vec();
+        if self.shader_bends() { rows.push(CURVE_ROW); }
         rows.extend(Self::look_rows(self.current_cart_platform()).0);
         rows
     }
     fn pause_screen_page_key(&self, row: usize) -> Option<usize> {
         let own = self.pause_screen_rows().len();
+        let curve = usize::from(self.shader_bends());
         if row < own { self.pause_screen_key(row) }
-        else { Self::look_rows(self.current_cart_platform()).1.get(row - own).copied() }
+        else if row < own + curve { Some(CURVE_KEY) }
+        else { Self::look_rows(self.current_cart_platform()).1.get(row - own - curve).copied() }
+    }
+    /// The game's shader bends the picture (Curvature): CRT-Pi, GDV
+    /// Trinitron, CRT Geom Deluxe, Fakelottes.
+    fn shader_bends(&self) -> bool {
+        use crate::settings::Shader;
+        matches!(self.game_shader(), Shader::CrtPi | Shader::CrtGdvTrinitron
+            | Shader::CrtGeomDeluxe | Shader::Fakelottes)
     }
     fn system_rows(platform: Platform)-> &'static [usize] {
         Self::system_rows_on(platform,panel_size())
@@ -6238,7 +6262,7 @@ impl Engine {
             UI_ACTION.lock().unwrap_or_else(|e| e.into_inner())
                 .push_back(41 + self.settings.orientation as i32);
         }
-        if (66..=68).contains(&key) {
+        if (66..=68).contains(&key) || key == CURVE_KEY {
             if self.game.is_some() { self.apply_game_look(); }
             self.keep_lcd_integer();
         }

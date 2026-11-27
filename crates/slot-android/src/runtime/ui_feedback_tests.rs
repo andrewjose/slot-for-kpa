@@ -857,3 +857,20 @@ fn playstation_pad_and_cards_are_emulation_settings() {
     assert!(options.contains(&("pcsx_rearmed_vibration", "disabled")));
     assert!(options.contains(&("slot_port1_device", "517")), "RETRO_DEVICE_SUBCLASS(ANALOG, 1)");
 }
+
+#[test]
+fn curvature_is_a_setting_with_four_levels() {
+    assert_eq!(MENU_TEXT[CURVE_ROW], "Curvature");
+    let mut s = crate::settings::Settings::default();
+    assert_eq!(s.curve(), 0.0, "flat unless asked");
+    assert_eq!(SETTING_VALUE_NAMES[5], "OFF");
+    s.change(CURVE_KEY, true);
+    assert_eq!(SETTING_VALUE_NAMES[CURVE_VALUE + s.curvature as usize - 1], "LIGHT");
+    s.change(CURVE_KEY, true);
+    assert_eq!(s.curve(), 1.0, "Medium is crt-pi's own barrel");
+    s.change(CURVE_KEY, true);
+    s.change(CURVE_KEY, true);
+    assert_eq!(s.curvature, 0, "Strong wraps to Off");
+    s.change(CURVE_KEY, false);
+    assert_eq!(SETTING_VALUE_NAMES[CURVE_VALUE + s.curvature as usize - 1], "STRONG");
+}

@@ -28,6 +28,7 @@ struct GameProgram {
     u_dm_fg: gl::types::GLint,
     u_dm_bgc: gl::types::GLint,
     u_dm_lum: gl::types::GLint,
+    u_curve: gl::types::GLint,
 }
 
 impl GameProgram {
@@ -61,6 +62,7 @@ impl GameProgram {
             u_dm_fg: at("u_dm_fg"),
             u_dm_bgc: at("u_dm_bgc"),
             u_dm_lum: at("u_dm_lum"),
+            u_curve: at("u_curve"),
         })
     }
 }
@@ -174,6 +176,8 @@ pub struct GamePass {
     /// A home console picture at the top of the screen, not centred (a
     /// Watomsk logo sits in the band under it).
     top: bool,
+    /// CRT curvature (0 flat), for the shaders that bend.
+    curve: f32,
 }
 
 impl GamePass {
@@ -194,6 +198,7 @@ impl GamePass {
         target.set_effect(self.effect);
         target.light = self.light;
         target.lcd_params = self.lcd_params;
+        target.curve = self.curve;
         target.dot_palette = self.dot_palette;
         if let Some((size, rgba)) = &self.dot_bg_pixels {
             target.set_dot_background(*size, rgba);
@@ -244,7 +249,7 @@ impl GamePass {
             area: default_area(),
             size: (SRC_W, SRC_H),
             fit: Fit::Canvas,
-            top: false,
+            top: false, curve: 0.0,
         })
     }
 
@@ -324,6 +329,12 @@ impl GamePass {
 
     pub fn set_colour_correction(&mut self, enabled: bool) {
         self.colour_correct = enabled;
+    }
+
+    /// CRT curvature: 0 flat; 1 crt-pi's own barrel. Only CRT-Pi, GDV
+    /// Trinitron, Geom Deluxe and Fakelottes bend.
+    pub fn set_curvature(&mut self, curve: f32) {
+        self.curve = curve.max(0.0);
     }
 
     pub fn set_paper(&mut self, size: u32, rgba: &[u8]) {
@@ -454,6 +465,7 @@ impl GamePass {
             gl::Uniform2f(p.u_fbo, self.fbo_scale[0], self.fbo_scale[1]);
             gl::Uniform4f(p.u_pic, pic[0], pic[1], pic[2], pic[3]);
             gl::Uniform2f(p.u_light, self.light[0], self.light[1]);
+            gl::Uniform1f(p.u_curve, self.curve);
             if self.lcd != LcdEffect::Off {
                 let [x, y] = self.lcd_params.shadow_offset;
                 gl::Uniform2f(p.u_shadow, x, y);

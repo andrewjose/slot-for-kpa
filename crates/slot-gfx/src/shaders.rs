@@ -62,6 +62,9 @@ uniform float u_paper_size;
 uniform vec4 u_rect;
 uniform vec2 u_fbo;
 uniform vec4 u_pic;
+/* Curvature (CRT-Pi, GDV Trinitron, Geom Deluxe, Fakelottes): 0 flat, 1
+   crt-pi's own 0.10 x / 0.15 y barrel. */
+uniform float u_curve;
 varying vec2 v_uv;
 /* The CRT shaders' rows: a frame of more than 300 lines (PlayStation 480i,
    SNES/Mega Drive interlaced) is two fields, so its scanlines keep the
@@ -965,6 +968,14 @@ vec3 xbr_lv2(vec2 uv) {
 void main() {
     crt_src = u_src.y > 300.0 ? vec2(u_src.x, u_src.y*0.5) : u_src;
     vec2 uv = u_uv.xy + v_uv * u_uv.zw;
+    if (u_mode > 13.5 && u_mode < 17.5 && u_curve > 0.0) {
+        // The picture as a tube face: bent within its own rect, the
+        // corners pulled in to black (davej crt-pi's barrel).
+        vec2 size = u_pic.zw - u_pic.xy;
+        vec2 p = (uv - u_pic.xy) / size * 2.0 - 1.0;
+        p *= vec2(1.0 + p.y * p.y * 0.10 * u_curve, 1.0 + p.x * p.x * 0.15 * u_curve);
+        uv = u_pic.xy + (p * 0.5 + 0.5) * size;
+    }
     vec2 f = fract(uv * u_src);
     vec3 c;
     // The LCD shaders (LCD3x, Grid, Dot, Simpletex, zfast LCD, LCD1x,

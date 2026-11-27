@@ -274,6 +274,11 @@ impl Compositor {
         self.game.set_lcd_params(params);
     }
 
+    /// CRT curvature (0 flat, 1 crt-pi's barrel).
+    pub fn set_curvature(&mut self, curve: f32) {
+        self.game.set_curvature(curve);
+    }
+
     pub fn set_dot_palette(&mut self, colours: [u32; 4]) {
         self.game.set_dot_palette(colours);
     }

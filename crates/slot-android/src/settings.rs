@@ -161,6 +161,14 @@ impl PsxCard {
 }
 
 fn psx_card2_default() -> PsxCard { PsxCard::Off }
+
+impl Settings {
+    /// The shader's curvature for a Curvature level (crt-pi's own barrel
+    /// is Medium).
+    pub fn curve(&self) -> f32 {
+        [0.0, 0.5, 1.0, 1.6][usize::from(self.curvature.min(3))]
+    }
+}
 fn yes() -> bool { true }
 
 /// Interface > Orientation: how slot.'s window turns. Landscape is what
@@ -538,6 +546,9 @@ pub struct Settings {
     pub psx_card1: PsxCard,
     #[serde(default = "psx_card2_default")]
     pub psx_card2: PsxCard,
+    /// Screen > Curvature for the CRT shaders that bend: 0 Off, 1 Light,
+    /// 2 Medium, 3 Strong.
+    pub curvature: u8,
     /// Clock & Battery at the top of the shelf instead of on the bar.
     #[serde(default)]
     pub clock_on_top: bool,
@@ -631,6 +642,7 @@ impl Default for Settings {
             orientation: Orientation::Landscape,
             psx_dualshock: true, psx_vibration: true,
             psx_card1: PsxCard::PerGame, psx_card2: PsxCard::Off,
+            curvature: 0,
             clock_on_top: false, icons_on_bottom: false, apps_running_only: false,
             cart_studio_size: 0,
             status_opt_in_v2: true, wallpaper: WallpaperPick::Default,
@@ -1050,6 +1062,7 @@ impl Settings {
             93 => self.psx_vibration = !self.psx_vibration,
             94 => self.psx_card1 = self.psx_card1.step(right, false),
             95 => self.psx_card2 = self.psx_card2.step(right, true),
+            96 => self.curvature = if right { (self.curvature + 1) % 4 } else { (self.curvature + 3) % 4 },
             _ => return false,
         }
         *self != before
