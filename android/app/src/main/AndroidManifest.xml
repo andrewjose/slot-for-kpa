@@ -41,7 +41,9 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="landscape">
+            android:screenOrientation="unspecified">
+            <!-- Interface > Orientation sets the way up in onCreate
+                 (SlotOrientation): Landscape unless chosen otherwise. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

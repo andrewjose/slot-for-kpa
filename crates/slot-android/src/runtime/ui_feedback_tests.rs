@@ -810,3 +810,20 @@ fn one_core_systems_open_the_select_menu_too() {
             crate::core_picker::Outcome::Write(Core::primary_for(platform)));
     }
 }
+
+#[test]
+fn orientation_is_an_interface_setting() {
+    use crate::settings::Orientation;
+    assert_eq!(MENU_TEXT[*INTERFACE_ROWS.last().unwrap()], "Orientation");
+    assert_eq!(SETTING_VALUE_NAMES[ORIENTATION_VALUE], "LANDSCAPE");
+    assert_eq!(SETTING_VALUE_NAMES[ORIENTATION_VALUE + 2], "FOLLOW DEVICE");
+    let mut s = crate::settings::Settings::default();
+    assert_eq!(s.orientation, Orientation::Landscape);
+    s.change(91, true);
+    assert_eq!(s.orientation, Orientation::Portrait);
+    assert_eq!(serde_json::to_value(&s).unwrap()["orientation"], "portrait",
+        "the Android side reads this name");
+    s.change(91, false);
+    s.change(91, false);
+    assert_eq!(s.orientation, Orientation::Device);
+}

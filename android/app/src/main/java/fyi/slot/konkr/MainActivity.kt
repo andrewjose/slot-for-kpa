@@ -743,7 +743,7 @@ class MainActivity : Activity() {
                 raPendingGameNotice = null
                 loadGameFromSaf(request)
             }
-            when (nativePollUiAction()) {
+            when (val action = nativePollUiAction()) {
                 1 -> chooseRomFolder()
                 2 -> refreshLibrary()
                 3 -> {
@@ -789,6 +789,7 @@ class MainActivity : Activity() {
                 18 -> showPeerCartridgeConsent()
                 23 -> shareLinkCode()
                 40 -> saveScreenshot()
+                41, 42, 43 -> applyOrientation(SlotOrientation.fromAction(action))
                 19 -> slotUpdater.check(true)
                 20 -> slotUpdater.openNotes()
                 21 -> {
@@ -979,8 +980,16 @@ class MainActivity : Activity() {
     private var startupSplash: View? = null
     private lateinit var raAchievementOverlay: RaAchievementOverlay
 
+    /** Turns the window as Interface > Orientation says. */
+    private fun applyOrientation(orientation: Int) {
+        if (requestedOrientation != orientation) requestedOrientation = orientation
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Interface > Orientation, before anything is drawn: the RG Rotate
+        // and the like open straight in portrait instead of turning.
+        applyOrientation(SlotOrientation.saved(filesDir))
         getSystemService(InputManager::class.java)
             ?.registerInputDeviceListener(controllerListener, Handler(Looper.getMainLooper()))
         // A staged sign-out must finish before any native HTTP worker is started.

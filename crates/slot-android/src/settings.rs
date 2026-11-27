@@ -128,6 +128,27 @@ impl Blending {
     }
 }
 
+/// Interface > Orientation: how slot.'s window turns. Landscape is what
+/// slot. always did; Portrait suits handhelds like the RG Rotate, which
+/// otherwise start landscape and then turn (Andrew, 2026-11-26). The
+/// Android side reads it from this file at launch (MainActivity).
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Orientation {
+    #[default]
+    Landscape,
+    Portrait,
+    /// Android decides (auto-rotate, or the device's own way up).
+    Device,
+}
+impl Orientation {
+    pub fn step(self, right: bool) -> Self {
+        const ALL: [Orientation; 3] = [Orientation::Landscape, Orientation::Portrait, Orientation::Device];
+        let at = ALL.iter().position(|o| *o == self).unwrap_or(0);
+        ALL[if right { (at + 1) % 3 } else { (at + 2) % 3 }]
+    }
+}
+
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimeFormat {
     #[default]
@@ -472,6 +493,7 @@ pub struct Settings {
     pub show_integrations: bool,
     /// Missing legacy field retains original 24h display.
     pub time_format: TimeFormat,
+    pub orientation: Orientation,
     /// Clock & Battery at the top of the shelf instead of on the bar.
     #[serde(default)]
     pub clock_on_top: bool,
@@ -562,6 +584,7 @@ impl Default for Settings {
             run_ahead_frames: 0,
             show_wifi: false, show_bluetooth: false, show_integrations: false,
             time_format: TimeFormat::TwentyFourHour,
+            orientation: Orientation::Landscape,
             clock_on_top: false, icons_on_bottom: false, apps_running_only: false,
             cart_studio_size: 0,
             status_opt_in_v2: true, wallpaper: WallpaperPick::Default,
@@ -976,6 +999,7 @@ impl Settings {
             32 => self.clock_on_top = !self.clock_on_top,
             33 => self.icons_on_bottom = !self.icons_on_bottom,
             28 => self.time_format = self.time_format.toggle(),
+            91 => self.orientation = self.orientation.step(right),
             _ => return false,
         }
         *self != before

@@ -543,7 +543,7 @@ enum LcdFrom {
     Pause { row: usize },
 }
 
-const MENU_TEXT: [&str; 144] = [
+const MENU_TEXT: [&str; 145] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -688,6 +688,7 @@ const MENU_TEXT: [&str; 144] = [
     "Dark Level",                         // 141, dark refreshes
     "Dark Frames",                        // 142, dark refreshes per frame
     "Sensitivity",                        // 143, tilt and gyro games (upstream v2.3.0)
+    "Orientation",                        // 144, Interface (RG Rotate)
 ];
 /// MENU_TEXT's Sensitivity row (tilt and gyro games).
 const SENSITIVITY_TEXT: usize = 143;
@@ -736,7 +737,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 137] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 140] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -773,7 +774,11 @@ const SETTING_VALUE_NAMES: [&str; 137] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                // 130: BFI Dark Level, BLACK then 10% to 50%.
                                "BLACK", "10%", "20%", "30%", "40%", "50%",
                                // 136: Interface > Wallpaper's OLED Black.
-                               "OLED Black"];
+                               "OLED Black",
+                               // 137: Interface > Orientation.
+                               "LANDSCAPE", "PORTRAIT", "FOLLOW DEVICE"];
+/// SETTING_VALUE_NAMES' first Orientation value (Landscape, Portrait, Device).
+const ORIENTATION_VALUE: usize = 137;
 /// SETTING_VALUE_NAMES' "OLED Black" (Interface > Wallpaper).
 const OLED_BLACK_VALUE: usize = 136;
 
@@ -886,6 +891,7 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         27 => bezel_value(scoped.bezel_gb),
         28 => if settings.time_format==crate::settings::TimeFormat::TwelveHour
             {35}else{36},
+        91 => ORIENTATION_VALUE + settings.orientation as usize,
         29..=31 | 41..=43 => core_value(Engine::core_key_platform(key)
             .map_or(Core::Mgba, |platform| cores[platform as usize])),
         // Frame Blending, LCD Effect and Dither Blending: the game's own in
@@ -1007,8 +1013,8 @@ const GAMEPLAY_ROWS: [usize; 5] = [27, 28, 37, 30, 39];
 const GAMEPLAY_KEYS: [usize; 5] = [4, 5, 6, 8, 9];
 
 /// Settings > Status Bar (Siham 2026-11-09).
-const INTERFACE_ROWS: [usize; 5] = [127, 128, 129, 130, 116];
-const INTERFACE_KEYS: [usize; 5] = [32, 33, 13, 15, 28];
+const INTERFACE_ROWS: [usize; 6] = [127, 128, 129, 130, 116, 144];
+const INTERFACE_KEYS: [usize; 6] = [32, 33, 13, 15, 28, 91];
 
 #[derive(Clone, Copy)]
 struct LiveGameOptions {
@@ -5340,19 +5346,8 @@ impl Engine {
     }
     /// On the Systems page, an LCD Effect just turned on for a system whose
     /// Screen Size isn't Integer: its games will play at Integer.
-    fn tell_lcd_integer(&self) {
-        let ShelfOverlay::ScreenSystemSettings { platform, .. } = self.overlay else { return };
-        if self.settings.lcd_effect_for(platform) == crate::settings::LcdEffect::Off { return; }
-        if self.system_video_modes[platform as usize] == VideoMode::Actual { return; }
-        set_message("The LCD Effect plays these games at Integer size.".into());
-    }
-
     /// Settings > Systems' Screen Size: Integer, Original Ratio, Stretch.
     fn cycle_system_video_mode(&mut self, platform: Platform, right: bool) {
-        if self.settings.lcd_effect_for(platform) != crate::settings::LcdEffect::Off {
-            set_message("Screen Size stays Integer while the LCD Effect is on.".into());
-            return;
-        }
         let at=platform as usize;
         let now=self.system_video_modes[at];
         let mode=if right { now.bigger() } else { now.smaller() };
@@ -6204,10 +6199,15 @@ impl Engine {
         // Clock formatting can change independently of Android's next
         // status event. Force one re-render of the existing clock value.
         if key == 28 { self.last_system_status_rev = 0; }
+        // The Android side turns the window: UI action 41 Landscape,
+        // 42 Portrait, 43 the device's way.
+        if key == 91 {
+            UI_ACTION.lock().unwrap_or_else(|e| e.into_inner())
+                .push_back(41 + self.settings.orientation as i32);
+        }
         if (66..=68).contains(&key) {
             if self.game.is_some() { self.apply_game_look(); }
             self.keep_lcd_integer();
-            self.tell_lcd_integer();
         }
         if key == 5 {
             FF_AUDIO_ENABLED.store(self.settings.ff_sound, Ordering::Release);
