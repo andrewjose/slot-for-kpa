@@ -47,6 +47,10 @@ pub enum Toast {
     ScreenInteger,
     ScreenRatio,
     ScreenStretch,
+    /// NES/SNES on narrow screens: whole multiples that never cut.
+    ScreenFit,
+    /// NES/SNES on narrow screens: a 4:3 picture.
+    ScreenWide,
     /// An LCD Effect keeps the game at Integer.
     ScreenIntegerLcd,
     Palette(GbPalette),
@@ -73,7 +77,7 @@ const MOTION_TEXT: [&str; 10] = [
 ];
 
 impl Toast {
-    const FIXED: [Toast; 44] = [
+    const FIXED: [Toast; 46] = [
         Toast::StateSaved,
         Toast::StateLoaded,
         Toast::NeedsGpsp,
@@ -112,6 +116,8 @@ impl Toast {
         Toast::ScreenInteger,
         Toast::ScreenRatio,
         Toast::ScreenStretch,
+        Toast::ScreenFit,
+        Toast::ScreenWide,
         Toast::ScreenIntegerLcd,
         Toast::SunSensor,
         Toast::SunAuto,
@@ -180,6 +186,8 @@ impl Toast {
             Toast::ScreenInteger => "Screen: Integer",
             Toast::ScreenRatio => "Screen: Original Ratio",
             Toast::ScreenStretch => "Screen: Stretch",
+            Toast::ScreenFit => "Screen: Integer (No Crop)",
+            Toast::ScreenWide => "Screen: 4:3",
             Toast::ScreenIntegerLcd => "Screen: Integer (LCD)",
             Toast::Palette(p) => p.label(),
             Toast::Sun(level) => SUN_TEXT[usize::from(level.min(10))],

@@ -16,6 +16,14 @@ pub enum VideoMode {
     /// Non-integer: the full panel height at the platform's own aspect ratio.
     Aspect,
     Stretch,
+    /// NES/SNES on screens narrower than 4:3, where Integer overscales:
+    /// the next whole multiple down instead, nothing cut (Andrew,
+    /// 2026-11-26: some games lose too much at the sides). Elsewhere the
+    /// same as Integer.
+    Fit,
+    /// NES/SNES on screens narrower than 4:3: the 4:3 picture, full width
+    /// (with a band bezel under it). Elsewhere the same as Original Ratio.
+    Wide,
 }
 
 impl VideoMode {
@@ -24,6 +32,8 @@ impl VideoMode {
             VideoMode::Actual => "actual",
             VideoMode::Aspect => "aspect",
             VideoMode::Stretch => "stretch",
+            VideoMode::Fit => "fit",
+            VideoMode::Wide => "wide",
         }
     }
 
@@ -32,24 +42,51 @@ impl VideoMode {
             "actual" => Some(VideoMode::Actual),
             "aspect" => Some(VideoMode::Aspect),
             "stretch" => Some(VideoMode::Stretch),
+            "fit" => Some(VideoMode::Fit),
+            "wide" => Some(VideoMode::Wide),
             _ => None,
         }
     }
 
     /// L1: one size up, Actual -> Aspect -> Stretch.
     pub fn bigger(self) -> VideoMode {
-        match self {
-            VideoMode::Actual => VideoMode::Aspect,
-            VideoMode::Aspect | VideoMode::Stretch => VideoMode::Stretch,
-        }
+        self.bigger_on(false)
     }
 
     /// R1: one size down, Stretch -> Aspect -> Actual.
     pub fn smaller(self) -> VideoMode {
-        match self {
-            VideoMode::Stretch => VideoMode::Aspect,
-            VideoMode::Aspect | VideoMode::Actual => VideoMode::Actual,
+        self.smaller_on(false)
+    }
+
+    /// The sizes in order: with `square` (NES/SNES on a narrow screen)
+    /// Integer (No Crop), Integer, Original Ratio, 4:3, Stretch.
+    fn steps(square: bool) -> &'static [VideoMode] {
+        if square {
+            &[VideoMode::Fit, VideoMode::Actual, VideoMode::Aspect, VideoMode::Wide, VideoMode::Stretch]
+        } else {
+            &[VideoMode::Actual, VideoMode::Aspect, VideoMode::Stretch]
         }
+    }
+
+    /// The mode a size stands for where its own isn't offered.
+    pub fn on(self, square: bool) -> VideoMode {
+        match self {
+            VideoMode::Fit if !square => VideoMode::Actual,
+            VideoMode::Wide if !square => VideoMode::Aspect,
+            mode => mode,
+        }
+    }
+
+    pub fn bigger_on(self, square: bool) -> VideoMode {
+        let steps = Self::steps(square);
+        let at = steps.iter().position(|m| *m == self.on(square)).unwrap_or(0);
+        steps[(at + 1).min(steps.len() - 1)]
+    }
+
+    pub fn smaller_on(self, square: bool) -> VideoMode {
+        let steps = Self::steps(square);
+        let at = steps.iter().position(|m| *m == self.on(square)).unwrap_or(0);
+        steps[at.saturating_sub(1)]
     }
 }
 
@@ -59,7 +96,7 @@ impl VideoMode {
 pub fn bezel_fits(bezel: Bezel, mode: VideoMode) -> bool {
     match bezel {
         Bezel::None => true,
-        Bezel::Default => mode == VideoMode::Actual,
+        Bezel::Default => matches!(mode, VideoMode::Actual | VideoMode::Fit),
         _ => mode != VideoMode::Stretch,
     }
 }
@@ -169,13 +206,15 @@ pub fn home_fit(platform: Platform, mode: VideoMode, aspect: f32, frame: (u32, u
         let a = square_aspect(frame);
         return match mode {
             VideoMode::Actual => slot_gfx::Fit::Overscale(a),
+            VideoMode::Fit => slot_gfx::Fit::Integer(a),
             VideoMode::Aspect => slot_gfx::Fit::Aspect(a),
+            VideoMode::Wide => slot_gfx::Fit::Aspect(4.0 / 3.0),
             VideoMode::Stretch => slot_gfx::Fit::Stretch,
         };
     }
     match mode {
-        VideoMode::Actual => slot_gfx::Fit::Integer(aspect),
-        VideoMode::Aspect => slot_gfx::Fit::Aspect(aspect),
+        VideoMode::Actual | VideoMode::Fit => slot_gfx::Fit::Integer(aspect),
+        VideoMode::Aspect | VideoMode::Wide => slot_gfx::Fit::Aspect(aspect),
         VideoMode::Stretch => slot_gfx::Fit::Stretch,
     }
 }
@@ -194,11 +233,11 @@ pub fn picture_rect(platform: Platform, mode: VideoMode, panel: (u32, u32)) -> [
     let (w, h) = (w as f32, h as f32);
     let fit = (pw / w).min(ph / h);
     let (dw, dh) = match mode {
-        VideoMode::Actual => {
+        VideoMode::Actual | VideoMode::Fit => {
             let k = fit.floor().max(1.0);
             (w * k, h * k)
         }
-        VideoMode::Aspect => (w * fit, h * fit),
+        VideoMode::Aspect | VideoMode::Wide => (w * fit, h * fit),
         VideoMode::Stretch => (pw, ph),
     };
     [((pw - dw) / 2.0).floor(), ((ph - dh) / 2.0).floor(), dw, dh]
@@ -237,24 +276,12 @@ fn panel_aspect(panel: (u32, u32)) -> f32 {
     panel.0.max(1) as f32 / panel.1.max(1) as f32
 }
 
-/// A home console picture on `panel`, as slot_gfx::fit_window draws it
-/// (`top`: at the top of the screen instead of centred).
-pub fn home_rect(mode: VideoMode, aspect: f32, frame: (u32, u32), panel: (u32, u32), top: bool)
-    -> [f32; 4]
-{
+/// A home console picture on `panel`, as slot_gfx::fit_window draws it at
+/// `fit` (`top`: at the top of the screen instead of centred).
+pub fn fit_rect(fit: slot_gfx::Fit, frame: (u32, u32), panel: (u32, u32), top: bool) -> [f32; 4] {
     let (ow, oh) = (panel.0.max(1) as f32, panel.1.max(1) as f32);
-    let (tw, th) = (frame.0.max(1) as f32, frame.1.max(1) as f32);
-    let a = if aspect > 0.0 { aspect } else { tw / th };
-    let (pw, ph) = match mode {
-        VideoMode::Aspect => if oh * a <= ow { (oh * a, oh) } else { (ow, ow / a) },
-        VideoMode::Actual => {
-            let mut k = (oh / th).floor().max(1.0);
-            while k > 1.0 && th * k * a > ow { k -= 1.0; }
-            let ph = th * k;
-            ((ph * a).min(ow), ph)
-        }
-        VideoMode::Stretch => (ow, oh),
-    };
+    let [_, _, uw, vh] = slot_gfx::fit_window(fit, frame, (ow, oh));
+    let (pw, ph) = (ow / uw.max(1e-6), oh / vh.max(1e-6));
     let y = if top { 0.0 } else { (oh - ph) / 2.0 };
     [(ow - pw) / 2.0, y, pw, ph]
 }
@@ -293,9 +320,9 @@ pub fn watomsk_fit(bezel: Bezel, platform: Platform, mode: VideoMode, panel: (u3
         }
         Platform::Nes | Platform::Snes | Platform::Md | Platform::Psx | Platform::Tgcd => {
             if a > 4.0 / 3.0 * 1.01 {
-                side(home_rect(VideoMode::Aspect, 4.0 / 3.0, home.1, panel, false))
+                side(fit_rect(slot_gfx::Fit::Aspect(4.0 / 3.0), home.1, panel, false))
             } else if a < 4.0 / 3.0 * 0.99 && watomsk::has_band(design) {
-                band(home_rect(mode, home.0, home.1, panel, true))
+                band(fit_rect(home_fit(platform, mode, home.0, home.1, panel), home.1, panel, true))
             } else {
                 None
             }
@@ -310,7 +337,10 @@ pub fn bezel_offered(platform: Platform, panel: (u32, u32)) -> bool {
         Platform::Gb | Platform::Gbc =>
             picture_rect(platform, VideoMode::Aspect, panel)[0] >= ROOM * panel.0 as f32,
         Platform::Gba | Platform::Md => !screen_fits(platform, panel),
-        Platform::Nes | Platform::Snes | Platform::Psx | Platform::Tgcd => a > 4.0 / 3.0 * 1.01,
+        // Beside the 4:3 picture on wider screens, a band under it on
+        // narrower ones (every home console has a band logo).
+        Platform::Nes | Platform::Snes | Platform::Psx | Platform::Tgcd =>
+            !(4.0 / 3.0 * 0.99..=4.0 / 3.0 * 1.01).contains(&a),
     }
 }
 
@@ -430,9 +460,52 @@ mod tests {
         assert_eq!(watomsk_fit(Bezel::GenesisClassic, Platform::Md, Aspect, (720, 720), md),
             Some(Band([0.0, 0.0, 720.0, 540.0])));
         assert_eq!(watomsk_fit(Bezel::MegaDrive, Platform::Md, Aspect, (1024, 768), md), None);
-        assert!(bezel_offered(Platform::Md, (720, 720)) && !bezel_offered(Platform::Snes, (720, 720)));
+        assert!(bezel_offered(Platform::Md, (720, 720)) && bezel_offered(Platform::Snes, (720, 720)));
+        assert!(!bezel_offered(Platform::Snes, (1024, 768)));
         assert!(!bezel_offered(Platform::Gba, (960, 640)) && bezel_offered(Platform::Nes, (960, 640)));
         assert!(!bezel_offered(Platform::Gb, (1240, 1080)));
+    }
+
+    #[test]
+    fn every_home_console_has_a_band_on_square_screens() {
+        use VideoMode::*;
+        use WatomskFit::Band;
+        let nes = (4.0 / 3.0, (256, 240));
+        // 4:3 on a 1:1 screen: the full width at the top, the logo under it.
+        assert_eq!(watomsk_fit(Bezel::Nes, Platform::Nes, Wide, (720, 720), nes),
+            Some(Band([0.0, 0.0, 720.0, 540.0])));
+        let snes = (4.0 / 3.0, (256, 224));
+        assert_eq!(watomsk_fit(Bezel::Snes, Platform::Snes, Wide, (720, 720), snes),
+            Some(Band([0.0, 0.0, 720.0, 540.0])));
+        // Integer (No Crop): 2x of 256x224 in square pixels, at the top.
+        assert_eq!(watomsk_fit(Bezel::Snes, Platform::Snes, Fit, (720, 720), snes),
+            Some(Band([104.0, 0.0, 512.0, 448.0])));
+        for (bezel, platform) in [(Bezel::Psx, Platform::Psx), (Bezel::Turbografx, Platform::Tgcd)] {
+            assert!(bezel_offered(platform, (720, 720)), "{platform:?}");
+            assert!(matches!(watomsk_fit(bezel, platform, Aspect, (720, 720), (4.0 / 3.0, (320, 240))),
+                Some(Band(_))), "{platform:?}");
+        }
+    }
+
+    #[test]
+    fn nes_and_snes_on_narrow_screens_have_five_sizes() {
+        use VideoMode::*;
+        let snes = (256, 224);
+        let fit = |mode| home_fit(Platform::Snes, mode, 4.0 / 3.0, snes, (720, 720));
+        assert_eq!(fit(Fit), slot_gfx::Fit::Integer(256.0 / 224.0), "nothing cut");
+        assert_eq!(fit(Actual), slot_gfx::Fit::Overscale(256.0 / 224.0), "still the default");
+        assert_eq!(fit(Wide), slot_gfx::Fit::Aspect(4.0 / 3.0));
+        assert_eq!(default_mode(Platform::Snes, (720, 720)), Actual);
+        let mut mode = Fit;
+        let mut seen = vec![mode];
+        while mode.bigger_on(true) != mode { mode = mode.bigger_on(true); seen.push(mode); }
+        assert_eq!(seen, [Fit, Actual, Aspect, Wide, Stretch]);
+        assert_eq!(Fit.smaller_on(true), Fit);
+        // Elsewhere the two extra sizes are Integer and Original Ratio.
+        assert_eq!(Fit.bigger_on(false), Aspect);
+        assert_eq!(Wide.smaller_on(false), Actual);
+        assert_eq!(VideoMode::parse("fit"), Some(Fit));
+        assert_eq!(VideoMode::parse(Wide.as_str()), Some(Wide));
     }
 
     #[test]

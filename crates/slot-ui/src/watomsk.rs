@@ -73,22 +73,31 @@ files!(
         "megadrive-3x2",
         "megadrive-band",
         "nes-16x9",
+        "nes-band",
         "nes-3x2",
         "nes-graylogo-16x9",
+        "nes-graylogo-band",
         "nes-graylogo-3x2",
         "pcengine-16x9",
+        "pcengine-band",
         "pcengine-3x2",
         "psx-16x9",
+        "psx-band",
         "psx-3x2",
         "snes-16x9",
+        "snes-band",
         "snes-3x2",
         "snes-alt-16x9",
+        "snes-alt-band",
         "snes-alt-3x2",
         "snes-graylogo-16x9",
+        "snes-graylogo-band",
         "snes-graylogo-3x2",
         "snes-graylogo-alt-16x9",
+        "snes-graylogo-alt-band",
         "snes-graylogo-alt-3x2",
         "turbografx-16x9",
+        "turbografx-band",
         "turbografx-3x2",
 );
 
@@ -223,8 +232,8 @@ mod tests {
                     assert_eq!(side.rgba[((cy * w + cx) * 4 + 3) as usize], 0, "{design:?}");
                     assert!((shape.aspect() - w as f32 / h as f32).abs() < 0.01, "{design:?}");
                 }
-                let wants_band = matches!(design, Design::GbaClassic | Design::Gba | Design::GbaSp
-                    | Design::GbaAlt | Design::GenesisClassic | Design::Genesis | Design::MegaDrive);
+                // Every design but the Game Boys' (they sit beside the picture).
+                let wants_band = !matches!(design, Design::Gb | Design::Pocket | Design::Color);
                 assert_eq!(band(design).is_some(), wants_band, "{design:?}");
             }
         }

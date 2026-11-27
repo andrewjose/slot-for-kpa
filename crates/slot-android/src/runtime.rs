@@ -745,7 +745,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 148] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 150] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -788,7 +788,11 @@ const SETTING_VALUE_NAMES: [&str; 148] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                // 140: Emulation > PS1 rows.
                                "DUALSHOCK", "STANDARD", "PER GAME", "SHARED", "PER DISC",
                                // 145: Curvature (OFF is 5).
-                               "LIGHT", "MEDIUM", "STRONG"];
+                               "LIGHT", "MEDIUM", "STRONG",
+                               // 148: Screen Size on NES/SNES on narrow screens.
+                               "INTEGER (NO CROP)", "4:3"];
+/// SETTING_VALUE_NAMES' Integer (No Crop), then 4:3.
+const SCREEN_FIT_VALUE: usize = 148;
 /// SETTING_VALUE_NAMES' first Curvature value: Light, Medium, Strong.
 const CURVE_VALUE: usize = 145;
 /// The Curvature row (MENU_TEXT) and its setting key.
@@ -906,8 +910,10 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         82 => 130 + usize::from(settings.bfi_dark.min(50) / 10),
         83 => if settings.bfi_frames == 0 { 66 } else { 54 + usize::from(settings.bfi_frames.min(3)) },
         75 => bezel_value(scoped.bezel_tgcd),
-        SCREEN_SIZE_KEY => SCREEN_SIZE_VALUE + match video {
-            VideoMode::Actual => 0, VideoMode::Aspect => 1, VideoMode::Stretch => 2,
+        SCREEN_SIZE_KEY => match video {
+            VideoMode::Actual => SCREEN_SIZE_VALUE, VideoMode::Aspect => SCREEN_SIZE_VALUE + 1,
+            VideoMode::Stretch => SCREEN_SIZE_VALUE + 2,
+            VideoMode::Fit => SCREEN_FIT_VALUE, VideoMode::Wide => SCREEN_FIT_VALUE + 1,
         },
         26 => bezel_value(scoped.bezel_gbc),
         27 => bezel_value(scoped.bezel_gb),
@@ -5117,7 +5123,8 @@ impl Engine {
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
     fn step_screen_size(&mut self, bigger: bool) {
-        let mode = if bigger { self.video_mode.bigger() } else { self.video_mode.smaller() };
+        let square = self.square_pixels();
+        let mode = if bigger { self.video_mode.bigger_on(square) } else { self.video_mode.smaller_on(square) };
         if mode == self.video_mode { return; }
         self.set_video_mode(mode);
         if self.video_mode != mode { return; }
@@ -5126,11 +5133,18 @@ impl Engine {
     }
 
     fn video_mode_toast(&self) -> Toast {
-        match self.video_mode {
+        match self.video_mode.on(self.square_pixels()) {
             VideoMode::Actual => Toast::ScreenInteger,
             VideoMode::Aspect => Toast::ScreenRatio,
             VideoMode::Stretch => Toast::ScreenStretch,
+            VideoMode::Fit => Toast::ScreenFit,
+            VideoMode::Wide => Toast::ScreenWide,
         }
+    }
+
+    /// NES/SNES on a screen narrower than 4:3: five screen sizes.
+    fn square_pixels(&self) -> bool {
+        video_mode::square_pixels(self.current_cart_platform(), panel_size())
     }
 
     /// A short Android message when the chosen bezel can't frame this size.
@@ -5407,7 +5421,8 @@ impl Engine {
     fn cycle_system_video_mode(&mut self, platform: Platform, right: bool) {
         let at=platform as usize;
         let now=self.system_video_modes[at];
-        let mode=if right { now.bigger() } else { now.smaller() };
+        let square=video_mode::square_pixels(platform,panel_size());
+        let mode=if right { now.bigger_on(square) } else { now.smaller_on(square) };
         if mode==now { return; }
         let paths=PATHS.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let Some((root,_))=paths else { return };
@@ -5600,7 +5615,8 @@ impl Engine {
 
     fn change_game_screen_or_gameplay(&mut self, key: usize, right: bool) {
         if key == SCREEN_SIZE_KEY {
-            let mode = if right { self.video_mode.bigger() } else { self.video_mode.smaller() };
+            let square = self.square_pixels();
+            let mode = if right { self.video_mode.bigger_on(square) } else { self.video_mode.smaller_on(square) };
             if mode != self.video_mode {
                 self.set_video_mode(mode);
                 self.hud.toast(self.video_mode_toast(), self.born.elapsed().as_millis() as u64);
