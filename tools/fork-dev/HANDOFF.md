@@ -3,7 +3,7 @@
 _Last updated 2026-11-27._
 
 ## 0. Resume here
-- **Current build:** `slot 2.2.2-fork.32 - AJ EDITION, portrait start, fresh-install defaults (personal)` (BIOS + Kingdom Hearts wallpaper inside: never upload). Personal APK = release asset + `tooling\add_bios.py --wallpaper "personal assets\default-wallpaper.png"` + zipalign + v2 sign. CI refuses an APK with assets/bios/ or assets/personal/.
+- **Current build:** `slot 2.2.2-fork.35 - Japanese box art for translations (personal)` (BIOS + Kingdom Hearts wallpaper inside: never upload). fork.32 plus: fan translations (ArtGuess.translated: [T-En…], T+Eng, (English…), translation, (patched)) and carts whose header says Japan (CartGuess.headerRegion: GB 0x14A, GBA code letter) prefer the Japanese release's art (ArtGuess.rank, OfficialArtMatcher preferredRegion, SNES label regions); GB/GBA name-matched translations get the title band (CartGuess.translationBand). Existing labels are not redone. Personal APK = release asset + `tooling\add_bios.py --wallpaper "personal assets\default-wallpaper.png"` + zipalign + v2 sign.
 - **fork.27 + fork.29 (2026-11-26/27, Andrew: "Do all the todos"), untested on a device:** PS1 DualShock sticks/L3/R3, PS1 Controller/Vibration/Memory Card 1/2 settings (cards were empty because slot. never set `pcsx_rearmed_memcard1/2`), CRT Curvature (CRT-Pi, GDV, Geom Deluxe, Fakelottes), band logos for PS1/TG/PCE/NES/SNES (`tools/watomsk-overlays/bands.py`), NES/SNES Integer (No Crop) and 4:3 on narrow screens, PSP launcher shelf (hands games to PPSSPP: Legacy, Gold, then store package), plus queue items 2, 10, 11, 12, 14 (BFI->Native pacing, SELECT menu on one-core systems, disc-hack name band, Orientation, LCD effects at any size). fork.28 failed one Kotlin test (CSO now PSP), fixed in 29. Checklist in the build's `What's new.txt`.
 - **Run 26 new:** updater reads andrewjose/slot-for-kpa, versions 2.2.2-fork.N / 357000+N, CI publishes each run as a release (run 25 failed on the version-read step; fixed).
 - **Run 23 new (untested):** X in the SELECT core menu toggles the selected cart's `.title` marker, the same as Cart Studio's File name row (`pr/label-name-toggle`). The cart face disk cache now keys on the marker, so a toggled face doesn't come back stale after a restart (this also affected run 20's Cart Studio row). PS1/TG-CD have one core and no SELECT menu, so for them it's Cart Studio only.
@@ -28,7 +28,7 @@ _Last updated 2026-11-27._
   4. Emulation bar: `menu_cursor()` (was a hard-coded 3); test `settings_pages_place_the_bar_by_their_own_row_count`.
   5. L1/R1 Rewind/FF default on gb/gbc/nes/tgcd (`Controls::shoulders`), `Hotkeys.shoulders` so the custom-hotkey path and labels follow.
   6. `BootEditionTag.kt` draws AJ EDITION from the wordmark vector's frame.
-- **Next:** Andrew installs fork.32 and works through its `What's new.txt`.
+- **Next:** Andrew installs fork.35 and works through its `What's new.txt`.
 - **No upstream PRs (Andrew, 2026-11-23):** the fork no longer lines up with upstream. Work goes straight onto `build/test-apk-v2.2.2`, the fork's main line; the `pr/*` branches are history.
 - **Releases (from run 25):** every push to the build branch publishes GitHub release `v2.2.2-fork.N` (N = CI run number; versionCode 357000 + N) with `slot-for-android-2.2.2-fork.N-arm64.apk` + `SHA256SUMS.txt`, and notes listing the commits since the last fork release. The in-app updater (`SlotUpdater.kt`) reads only `andrewjose/slot-for-kpa` and offers each newer run. The CI step refuses an APK containing `assets/bios/`. The personal APK (BIOS added, same test key, same version) is built from that release asset and never published. BIOS seeded once stay in app storage across OTA updates. Commits that don't change the app use `[skip ci]`. Runs 19-23 still point at upstream, so the first move onto the fork channel is installing run 25 by hand.
 - **Logs:** `adb logcat -c`, launch, `adb logcat -d > E:\Projects\slot-for-kpa\slot-log.txt`; failures read `SlotKONKR: Couldn't start <core>. (<reason>)`.
@@ -90,7 +90,9 @@ _Last updated 2026-11-27._
 | 29 | fork.27 plus the PSP launcher shelf | `archived\` |
 | 30 | fork.29 plus L1/R1 Rewind / Fast Forward (L2/R2 screen size) | `archived\` |
 | 31 | Kotlin compile error (Context in the poll loop) | — |
-| 32 | AJ EDITION: portrait start, fresh-install defaults + personal wallpaper, Emulation bar fix, L1/R1 Rewind/FF default, boot screen tag | Top level |
+| 32 | AJ EDITION: portrait start, fresh-install defaults + personal wallpaper, Emulation bar fix, L1/R1 Rewind/FF default, boot screen tag | `archived\` |
+| 33-34 | Kotlin test failures (artwork lambda argument, bracketed title) | — |
+| 35 | fork.32 plus Japanese box art + title bar for translations | Top level |
 
 ## 4. Still to verify on a device
 - Run 12 installs over run 11, and the BIOS show up in slot.'s BIOS folder.
