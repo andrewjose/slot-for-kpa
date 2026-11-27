@@ -5042,16 +5042,16 @@ impl Engine {
         self.game_lcd_effect(self.current_cart_platform()) != crate::settings::LcdEffect::Off
     }
 
-    /// An LCD Effect draws on whole pixels: while one is on the game plays
-    /// at Integer, whatever size was chosen. The choice itself is kept, and
-    /// comes back when the effect goes off. Each change of size shows its
-    /// banner.
+    /// The game back at its chosen size, with that size's banner. LCD
+    /// Effects once held the game at Integer; since 2026-11-26 (Andrew)
+    /// they run at any size, so this only restores a size an older build
+    /// left forced.
     fn keep_lcd_integer(&mut self) {
         if self.game.is_none() { return; }
         let Some(wanted) = self.lcd_video_mode() else { return };
         self.video_mode = wanted;
         self.apply_video_geometry();
-        let toast = if self.lcd_effect_on() { Toast::ScreenIntegerLcd } else { self.video_mode_toast() };
+        let toast = self.video_mode_toast();
         self.hud.toast(toast, self.born.elapsed().as_millis() as u64);
         self.tell_hidden_bezel();
     }
@@ -5059,25 +5059,16 @@ impl Engine {
     /// The size the game should switch to now that its LCD Effect is on
     /// (Integer) or off (the chosen size), if it isn't there already.
     fn lcd_video_mode(&self) -> Option<VideoMode> {
-        let wanted = if self.lcd_effect_on() { VideoMode::Actual } else { self.chosen_video_mode() };
+        let wanted = self.chosen_video_mode();
         // GBA on the KONKR has a single size (set_video_mode's rule).
         let single = self.current_cart_platform() == Platform::Gba && !fitted_canvas();
         (wanted != self.video_mode && !single).then_some(wanted)
-    }
-
-    /// A size change while an LCD Effect holds the game at Integer:
-    /// refused, with its banner.
-    fn lcd_holds_integer(&mut self) -> bool {
-        if !self.lcd_effect_on() { return false; }
-        self.hud.toast(Toast::ScreenIntegerLcd, self.born.elapsed().as_millis() as u64);
-        true
     }
 
     /// The top banner naming the new screen size.
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
     fn step_screen_size(&mut self, bigger: bool) {
-        if self.lcd_holds_integer() { return; }
         let mode = if bigger { self.video_mode.bigger() } else { self.video_mode.smaller() };
         if mode == self.video_mode { return; }
         self.set_video_mode(mode);
@@ -5562,7 +5553,6 @@ impl Engine {
 
     fn change_game_screen_or_gameplay(&mut self, key: usize, right: bool) {
         if key == SCREEN_SIZE_KEY {
-            if self.lcd_holds_integer() { return; }
             let mode = if right { self.video_mode.bigger() } else { self.video_mode.smaller() };
             if mode != self.video_mode {
                 self.set_video_mode(mode);

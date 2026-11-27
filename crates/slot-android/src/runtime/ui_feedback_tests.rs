@@ -595,17 +595,17 @@ fn an_lcd_effect_holds_games_at_integer() {
     let chosen = engine.chosen_video_mode();
     assert_eq!(engine.lcd_video_mode(), (chosen != VideoMode::Aspect).then_some(chosen));
 
-    // Pixel Transparency (or Sunlight Shimmer): Integer, other sizes refused.
+    // Pixel Transparency (or Sunlight Shimmer) runs at any size: the chosen
+    // size stays, and the size can still be changed (Andrew, 2026-11-26).
     for effect in [LcdEffect::Transparency, LcdEffect::Sunlight] {
         engine.settings.lcd_effect_gbc = effect;
-        engine.video_mode = VideoMode::Aspect;
-        assert_eq!(engine.lcd_video_mode(), Some(VideoMode::Actual));
-        engine.step_screen_size(true);
-        assert_eq!(engine.video_mode, VideoMode::Aspect, "no size change while it is on");
-        assert_eq!(engine.hud.said(now(&engine)), Some(Toast::ScreenIntegerLcd));
+        engine.video_mode = engine.chosen_video_mode();
+        assert_eq!(engine.lcd_video_mode(), None, "no forced Integer");
+        let before = engine.video_mode;
+        engine.step_screen_size(before == VideoMode::Actual);
+        assert_ne!(engine.video_mode, before, "the size changes while it is on");
+        assert_ne!(engine.hud.said(now(&engine)), Some(Toast::ScreenIntegerLcd));
     }
-    engine.video_mode = VideoMode::Actual;
-    assert_eq!(engine.lcd_video_mode(), None, "already Integer: no second banner");
     // The game's own LCD Effect (changed in game) wins over the system's.
     let mut profile = EmulationProfile::from_settings(&engine.settings);
     profile.lcd_effect_override = Some(LcdEffect::Off);
