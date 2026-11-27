@@ -800,7 +800,7 @@ open class MainActivity : Activity() {
                 41, 42, 43 -> {
                     applyOrientation(SlotOrientation.fromAction(action))
                     // Next launch starts this way up from its first frame.
-                    SlotOrientation.useLauncher(this, portrait = action == 42)
+                    SlotOrientation.useLauncher(this@MainActivity, portrait = action == 42)
                 }
                 19 -> slotUpdater.check(true)
                 20 -> slotUpdater.openNotes()
