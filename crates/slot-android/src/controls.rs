@@ -714,7 +714,11 @@ impl Controls {
     pub fn shoulders(&self, scope: &Scope, port: usize) -> (ShoulderRole, bool) {
         if let Some(role) = self.layout(scope).and_then(|l| l.ports[port].shoulders) { return (role, true); }
         let below = self.levels(scope, port).into_iter().find_map(|level| level.shoulders);
-        let default = if port == 0 { ShoulderRole::ScreenSize } else { ShoulderRole::Off };
+        // Port 1 rewinds / fast-forwards on L1 / R1 where the console has no
+        // shoulders (Andrew, 2026-11-27); the screen size moves to L2 / R2.
+        let default = if port > 0 { ShoulderRole::Off }
+            else if spare_shoulders(scope.system()) { ShoulderRole::Rewind }
+            else { ShoulderRole::ScreenSize };
         let role = below.unwrap_or(default);
         // A role the port can't have (Palette on Port 2): back to the default.
         let fits = ShoulderRole::choices(scope.system(), port).contains(&role);
@@ -876,10 +880,17 @@ pub struct Hotkeys {
     /// Forward and Rewind the Hotkey Button + R2 / L2 (not saved).
     #[serde(skip)]
     pub disc: bool,
+    /// The game playing has L1 / R1 as Rewind / Fast Forward (Systems >
+    /// Controls): those two keep L1 / R1 alone, and L2 / R2 size the screen
+    /// (not saved).
+    #[serde(skip)]
+    pub shoulders: bool,
 }
 
 impl Default for Hotkeys {
-    fn default() -> Self { Self { button: 109, binds: BTreeMap::new(), sticks: true, disc: false } }
+    fn default() -> Self {
+        Self { button: 109, binds: BTreeMap::new(), sticks: true, disc: false, shoulders: false }
+    }
 }
 
 /// A key's name in a hotkey: slot.'s own button names.
@@ -913,6 +924,8 @@ impl Hotkeys {
         match action {
             Action::FastForward if self.disc => vec![with(105)],
             Action::Rewind if self.disc => vec![with(104)],
+            Action::FastForward if self.shoulders => vec![alone(103)],
+            Action::Rewind if self.shoulders => vec![alone(102)],
             Action::FastForward => vec![alone(105)],
             Action::Rewind => vec![alone(104)],
             Action::SunDown if self.sun_alone() => vec![alone(106), with(104)],
@@ -1408,10 +1421,25 @@ mod tests {
     }
 
     #[test]
+    fn swapped_shoulders_move_rewind_and_fast_forward_to_l1_r1() {
+        let mut hk = Hotkeys { shoulders: true, ..Hotkeys::default() };
+        assert_eq!(hk.action_for(false, 103, false), Some(Action::FastForward));
+        assert_eq!(hk.action_for(false, 102, false), Some(Action::Rewind));
+        assert_eq!(hk.action_for(false, 105, false), None, "R2 sizes the screen");
+        assert_eq!(hk.label(Action::FastForward), "R1 (hold)");
+        assert_eq!(hk.label(Action::Rewind), "L1 (hold)");
+        hk.shoulders = false;
+        assert_eq!(hk.label(Action::FastForward), "R2 (hold)");
+    }
+
+    #[test]
     fn shoulder_roles_are_port_one_shortcuts_or_buttons() {
         let mut controls = Controls::default();
-        assert_eq!(controls.shoulders(&NES, 0), (ShoulderRole::ScreenSize, false));
+        // Rewind / Fast Forward until chosen otherwise (Andrew, 2026-11-27).
+        assert_eq!(controls.shoulders(&NES, 0), (ShoulderRole::Rewind, false));
         assert_eq!(controls.shoulders(&NES, 1), (ShoulderRole::Off, false));
+        assert_eq!(controls.resolve("gb", None, 0, XyRole::BA).shoulders, Some(ShoulderRole::Rewind));
+        assert_eq!(controls.resolve("gba", None, 0, XyRole::BA).shoulders, None, "GBA plays L / R");
         assert!(!ShoulderRole::choices("nes", 1).contains(&ShoulderRole::States));
         assert!(ShoulderRole::choices("gb", 0).contains(&ShoulderRole::Palette));
         assert!(!ShoulderRole::choices("nes", 0).contains(&ShoulderRole::Palette));
@@ -1421,6 +1449,10 @@ mod tests {
         }
         assert!(!ShoulderRole::choices("nes", 1).contains(&ShoulderRole::Rewind));
         assert_eq!(ShoulderRole::Rewind.label(), "Rewind / Fast Forward");
+        controls.cycle_shoulders(&NES, 0, true);
+        assert_eq!(controls.shoulders(&NES, 0), (ShoulderRole::Off, true));
+        controls.cycle_shoulders(&NES, 0, true);
+        assert_eq!(controls.shoulders(&NES, 0).0, ShoulderRole::ScreenSize, "a choice of his own stays");
         controls.cycle_shoulders(&NES, 0, true);
         controls.cycle_shoulders(&NES, 0, true);
         assert_eq!(controls.shoulders(&NES, 0).0, ShoulderRole::TurboAB);

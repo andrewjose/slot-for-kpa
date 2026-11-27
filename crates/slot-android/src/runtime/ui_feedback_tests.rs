@@ -874,3 +874,17 @@ fn curvature_is_a_setting_with_four_levels() {
     s.change(CURVE_KEY, false);
     assert_eq!(SETTING_VALUE_NAMES[CURVE_VALUE + s.curvature as usize - 1], "STRONG");
 }
+
+#[test]
+fn settings_pages_place_the_bar_by_their_own_row_count() {
+    // The Emulation page grew from 3 rows to 7 while the bar still counted
+    // 3, so it sat between rows (KONKR, 2026-11-27).
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    engine.overlay = ShelfOverlay::EmulationSettings { row: 6 };
+    assert_eq!(engine.menu_cursor(), (8, 6, EMULATION_ROWS.len()));
+    engine.overlay = ShelfOverlay::InterfaceSettings { row: 0 };
+    assert_eq!(engine.menu_cursor().2, INTERFACE_ROWS.len());
+    assert_eq!(EMULATION_ROWS.len(), EMULATION_KEYS.len());
+    assert_eq!(INTERFACE_ROWS.len(), INTERFACE_KEYS.len());
+}

@@ -3610,6 +3610,7 @@ impl Engine {
                 // Changed hotkeys have their own dispatcher; untouched ones
                 // run through slot.'s original gestures below.
                 self.controls.hotkeys.disc = self.game.is_some() && self.current_cart_platform() == Platform::Psx;
+                self.controls.hotkeys.shoulders = self.shoulders_swapped();
                 if self.game.is_some() && !self.controls.hotkeys.is_default()
                     && self.custom_hotkey(code, pressed) { return; }
                 if code == 109 { self.select_physical = pressed; }
@@ -4114,7 +4115,7 @@ impl Engine {
                         let role = match session {
                             Some(game) if game.has_layouts() => game.shoulder_role(),
                             _ if !matches!(platform, Platform::Gba | Platform::Snes | Platform::Md
-                                | Platform::Psx) => Some(Role::ScreenSize),
+                                | Platform::Psx) => Some(Role::Rewind),
                             _ => None,
                         };
                         let linked = session.is_some_and(GameSession::linked);
@@ -5154,6 +5155,48 @@ impl Engine {
     /// The top banner naming the new screen size.
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
+    /// The full-screen menu on show (a kind number), its selected row and
+    /// its row count, for the selection bar. The count must be the page's
+    /// own: a stale one puts the bar between rows.
+    fn menu_cursor(&self) -> (u8, usize, usize) {
+        match self.overlay {
+            ShelfOverlay::Menu { row } => (1u8, row, 6usize),
+            ShelfOverlay::Library { row } => (2u8, row, 6usize),
+            ShelfOverlay::GameMenu { row } => (3u8, row, pause_rows(
+                self.game.as_ref().is_some_and(GameSession::linked),
+                self.game.as_ref().is_some_and(GameSession::requires_relaunch)).len()),
+            ShelfOverlay::PauseSettings { row } => (13u8, row, self.pause_settings_rows().len()),
+            ShelfOverlay::PauseScreenSettings { row } =>
+                (14u8, row, self.pause_screen_page_rows().len()),
+            ShelfOverlay::PauseGameplaySettings { row } => (15u8, row, GAMEPLAY_KEYS.len()),
+            ShelfOverlay::Multiplayer => (11u8, 0, 0usize),
+            ShelfOverlay::Settings { row } => (4u8, row, SETTINGS_ROWS.len()),
+            ShelfOverlay::ControlsSettings { .. } | ShelfOverlay::ControlsPort { .. }
+            | ShelfOverlay::LayoutPorts { .. } | ShelfOverlay::LayoutPort { .. }
+            | ShelfOverlay::Hotkeys { .. } | ShelfOverlay::Cheats { .. } =>
+                self.controls_cursor().unwrap_or((0, 0, 0)),
+            ShelfOverlay::GeneralSettings { row } =>
+                (12u8, row, self.general_rows().len()),
+            ShelfOverlay::About { row } => (17u8, row, 2usize),
+            ShelfOverlay::InterfaceSettings { row } => (10u8, row, INTERFACE_ROWS.len()),
+            ShelfOverlay::EmulationSettings { row } => (8u8, row, EMULATION_KEYS.len()),
+            ShelfOverlay::PauseEmulationSettings { row } =>
+                (9u8, row, self.pause_emulation_rows().len()),
+            ShelfOverlay::PauseBfiSettings { row } => (42u8, row, BFI_ROWS.len()),
+            ShelfOverlay::ScreenSettings { row } => (5u8, row, SYSTEM_ORDER.len()),
+            ShelfOverlay::ScreenSystemSettings { platform,row } =>
+                (16u8,row,Self::system_page_rows(platform).len()),
+            ShelfOverlay::GameplaySettings { row } => (6u8, row, GAMEPLAY_KEYS.len()),
+            ShelfOverlay::LcdEffect { page: None, row, .. } =>
+                (40u8, row, LcdPage::ALL.len() + 1),
+            ShelfOverlay::LcdEffect { page: Some(page), row, .. } =>
+                (41u8 + page.index() as u8, row, page.fields().len()),
+            ShelfOverlay::CartStudio => (30u8, 0, 0),
+            ShelfOverlay::CartLibrary => (31u8, 0, 0),
+            _ => (0, 0, 0),
+        }
+    }
+
     /// Systems > Controls set L1 / R1 to Rewind / Fast Forward for the
     /// game playing (so L2 / R2 size the screen).
     fn shoulders_swapped(&self) -> bool {
@@ -7504,42 +7547,7 @@ impl Engine {
         self.prepare_cart_library();
         // Update full-screen menus and spring-smooth the selection bar.
         // Keep animation entirely in rendering: never delay controller input.
-        let (kind, selected, count) = match self.overlay {
-            ShelfOverlay::Menu { row } => (1u8, row, 6usize),
-            ShelfOverlay::Library { row } => (2u8, row, 6usize),
-            ShelfOverlay::GameMenu { row } => (3u8, row, pause_rows(
-                self.game.as_ref().is_some_and(GameSession::linked),
-                self.game.as_ref().is_some_and(GameSession::requires_relaunch)).len()),
-            ShelfOverlay::PauseSettings { row } => (13u8, row, self.pause_settings_rows().len()),
-            ShelfOverlay::PauseScreenSettings { row } =>
-                (14u8, row, self.pause_screen_page_rows().len()),
-            ShelfOverlay::PauseGameplaySettings { row } => (15u8, row, GAMEPLAY_KEYS.len()),
-            ShelfOverlay::Multiplayer => (11u8, 0, 0usize),
-            ShelfOverlay::Settings { row } => (4u8, row, SETTINGS_ROWS.len()),
-            ShelfOverlay::ControlsSettings { .. } | ShelfOverlay::ControlsPort { .. }
-            | ShelfOverlay::LayoutPorts { .. } | ShelfOverlay::LayoutPort { .. }
-            | ShelfOverlay::Hotkeys { .. } | ShelfOverlay::Cheats { .. } =>
-                self.controls_cursor().unwrap_or((0, 0, 0)),
-            ShelfOverlay::GeneralSettings { row } =>
-                (12u8, row, self.general_rows().len()),
-            ShelfOverlay::About { row } => (17u8, row, 2usize),
-            ShelfOverlay::InterfaceSettings { row } => (10u8, row, INTERFACE_ROWS.len()),
-            ShelfOverlay::EmulationSettings { row } => (8u8, row, 3usize),
-            ShelfOverlay::PauseEmulationSettings { row } =>
-                (9u8, row, self.pause_emulation_rows().len()),
-            ShelfOverlay::PauseBfiSettings { row } => (42u8, row, BFI_ROWS.len()),
-            ShelfOverlay::ScreenSettings { row } => (5u8, row, SYSTEM_ORDER.len()),
-            ShelfOverlay::ScreenSystemSettings { platform,row } =>
-                (16u8,row,Self::system_page_rows(platform).len()),
-            ShelfOverlay::GameplaySettings { row } => (6u8, row, GAMEPLAY_KEYS.len()),
-            ShelfOverlay::LcdEffect { page: None, row, .. } =>
-                (40u8, row, LcdPage::ALL.len() + 1),
-            ShelfOverlay::LcdEffect { page: Some(page), row, .. } =>
-                (41u8 + page.index() as u8, row, page.fields().len()),
-            ShelfOverlay::CartStudio => (30u8, 0, 0),
-            ShelfOverlay::CartLibrary => (31u8, 0, 0),
-            _ => (0, 0, 0),
-        };
+        let (kind, selected, count) = self.menu_cursor();
         // A page of more than six rows shows six and scrolls: the bar
         // follows the selected row within them (Controls' are already so).
         let offset = crate::controls::scroll_offset(selected, count);
