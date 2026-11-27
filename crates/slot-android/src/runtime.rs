@@ -4078,6 +4078,19 @@ impl Engine {
                         }
                         return;
                     }
+                    // Shoulders swapped (Rewind / Fast Forward on L1 / R1):
+                    // L2 / R2 are the screen size instead.
+                    let swapped = self.shoulders_swapped();
+                    if swapped && (code == 104 || code == 105) && !disc {
+                        if pressed { self.step_screen_size(code == 104); }
+                        return;
+                    }
+                    // A swapped L1 / R1 always ends its rewind or fast
+                    // forward, even let go with SELECT held.
+                    if swapped && !pressed && (code == 102 || code == 103) {
+                        if code == 102 { self.rewind_key(false); } else { self.fast_forward_key(false); }
+                        return;
+                    }
                     // A PlayStation game plays L2 / R2 (disc_time_key).
                     if code == 104 && !disc {
                         self.rewind_key(pressed);
@@ -4106,6 +4119,14 @@ impl Engine {
                         };
                         let linked = session.is_some_and(GameSession::linked);
                         let first = code == 102;
+                        if role == Some(Role::Rewind) {
+                            // Held keys: their release ends the rewind or
+                            // the fast forward. Never in a Link.
+                            if !linked {
+                                if first { self.rewind_key(pressed); } else { self.fast_forward_key(pressed); }
+                            }
+                            return;
+                        }
                         let shortcut = match role {
                             Some(Role::ScreenSize) => Some(0),
                             // A Link never loads or saves a state on its own.
@@ -5133,6 +5154,13 @@ impl Engine {
     /// The top banner naming the new screen size.
     /// One screen size up (Integer -> Original Ratio -> Stretch) or down,
     /// with its banner. GBA on the KONKR has a single size.
+    /// Systems > Controls set L1 / R1 to Rewind / Fast Forward for the
+    /// game playing (so L2 / R2 size the screen).
+    fn shoulders_swapped(&self) -> bool {
+        self.game.as_ref().is_some_and(|game| game.has_layouts()
+            && game.shoulder_role() == Some(crate::controls::ShoulderRole::Rewind))
+    }
+
     fn step_screen_size(&mut self, bigger: bool) {
         let square = self.square_pixels();
         let mode = if bigger { self.video_mode.bigger_on(square) } else { self.video_mode.smaller_on(square) };

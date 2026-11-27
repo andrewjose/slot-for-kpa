@@ -538,7 +538,10 @@ impl XyRole {
 /// What L1 and R1 do on a console without them (Game Boy, Color, NES).
 /// The first half is L1's, the second R1's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ShoulderRole { ScreenSize, States, TurboAB, AB, Palette, Shader, Off }
+pub enum ShoulderRole { ScreenSize, States, TurboAB, AB, Palette, Shader, Off,
+    /// L1 Rewind and R1 Fast Forward (held), and L2 / R2 take the screen
+    /// size instead: the two pairs swapped (Andrew, 2026-11-26).
+    Rewind }
 
 impl ShoulderRole {
     pub fn label(self) -> &'static str {
@@ -550,6 +553,7 @@ impl ShoulderRole {
             ShoulderRole::Palette => "Palette - / +",
             ShoulderRole::Shader => "Shader - / +",
             ShoulderRole::Off => "None",
+            ShoulderRole::Rewind => "Rewind / Fast Forward",
         }
     }
 
@@ -557,8 +561,8 @@ impl ShoulderRole {
     pub fn choices(system: &str, port: usize) -> &'static [ShoulderRole] {
         use ShoulderRole::*;
         if port > 0 { return &[TurboAB, AB, Off]; }
-        if system == "gb" { &[ScreenSize, States, TurboAB, AB, Palette, Shader, Off] }
-        else { &[ScreenSize, States, TurboAB, AB, Shader, Off] }
+        if system == "gb" { &[ScreenSize, States, TurboAB, AB, Palette, Shader, Rewind, Off] }
+        else { &[ScreenSize, States, TurboAB, AB, Shader, Rewind, Off] }
     }
 }
 
@@ -1411,6 +1415,12 @@ mod tests {
         assert!(!ShoulderRole::choices("nes", 1).contains(&ShoulderRole::States));
         assert!(ShoulderRole::choices("gb", 0).contains(&ShoulderRole::Palette));
         assert!(!ShoulderRole::choices("nes", 0).contains(&ShoulderRole::Palette));
+        // L1 / R1 Rewind / Fast Forward: Port 1's, on every spare-shoulder system.
+        for system in ["gb", "gbc", "nes", "tgcd"] {
+            assert!(ShoulderRole::choices(system, 0).contains(&ShoulderRole::Rewind), "{system}");
+        }
+        assert!(!ShoulderRole::choices("nes", 1).contains(&ShoulderRole::Rewind));
+        assert_eq!(ShoulderRole::Rewind.label(), "Rewind / Fast Forward");
         controls.cycle_shoulders(&NES, 0, true);
         controls.cycle_shoulders(&NES, 0, true);
         assert_eq!(controls.shoulders(&NES, 0).0, ShoulderRole::TurboAB);
