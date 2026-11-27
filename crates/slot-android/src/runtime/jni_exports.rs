@@ -967,6 +967,24 @@ pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativePadKey(
         .push_back(Input::PadKey { device, code: key, pressed: pressed != 0, stick: stick != 0 });
 }
 
+/// A controller's sticks (left x, y, right x, y; -1..1, up and left
+/// negative), sent as they move. A PlayStation DualShock game reads them.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativePadAnalog(
+    _env: *mut c_void, _activity: *mut c_void,
+    device: i32, lx: f32, ly: f32, rx: f32, ry: f32,
+) {
+    let mut queue = INPUT.lock().unwrap_or_else(|poison| poison.into_inner());
+    // Only the newest position matters: replace a queued one.
+    if let Some(Input::PadAnalog { sticks, .. }) = queue.iter_mut().rev()
+        .find(|i| matches!(i, Input::PadAnalog { device: d, .. } if *d == device))
+    {
+        *sticks = [lx, ly, rx, ry];
+        return;
+    }
+    queue.push_back(Input::PadAnalog { device, sticks: [lx, ly, rx, ry] });
+}
+
 /// A controller key as slot.'s menus read it (Settings > Controls), for
 /// Android's own pages: Apps, slot.'s dialogs, the RetroAchievements account
 /// (upstream #123).

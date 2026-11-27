@@ -107,6 +107,9 @@ impl RetroCore for Tracked {
     fn set_port2(&mut self, input: ButtonMask) {
         self.core.set_port2(input);
     }
+    fn set_analog(&mut self, port: usize, axes: [i16; 4]) {
+        self.core.set_analog(port, axes);
+    }
     fn run_frame_linked(&mut self, p1: ButtonMask, p2: ButtonMask) {
         self.core.run_frame_linked(p1, p2);
         self.timeline += 1;

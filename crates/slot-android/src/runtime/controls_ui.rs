@@ -211,7 +211,7 @@ impl Engine {
             }
             if code == 109 { self.slot_bit(ButtonMask::SELECT, false); return true; }
             // A PlayStation game's L2 / R2 release reaches it below.
-            return matches!(code, 104..=107) && !(self.controls.hotkeys.disc && matches!(code, 104 | 105));
+            return matches!(code, 104..=107) && !(self.controls.hotkeys.disc && matches!(code, 104..=107));
         }
         if !matches!(self.overlay, ShelfOverlay::None) { return false; }
         if button != 0 && code == button {
@@ -242,7 +242,7 @@ impl Engine {
         }
         // L2, R2, L3 and R3 are slot.'s keys, never a game's (but a
         // PlayStation game plays L2 and R2).
-        matches!(code, 104..=107) && !(self.controls.hotkeys.disc && matches!(code, 104 | 105))
+        matches!(code, 104..=107) && !(self.controls.hotkeys.disc && matches!(code, 104..=107))
     }
 
     fn run_hotkey(&mut self, action: Action, pressed: bool) {
@@ -343,6 +343,12 @@ impl Engine {
             set_message(format!("Controller 2: {}", self.pad_name(Some(fp.as_str()))));
         }
         let port = self.controls.port_of(&fp);
+        // A DualShock game reads the left stick itself (pad_analog): its
+        // D-pad copy would press the D-pad too. Menus still use it.
+        if stick && self.sticks_are_analog() && self.controls_moment().playing {
+            self.pad_held.press(device, held, Sink::Nowhere);
+            return;
+        }
         let Some(slot) = self.controls.slot_code(&fp, code, stick) else {
             self.pad_held.press(device, held, Sink::Nowhere);
             return;
@@ -362,6 +368,24 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// Whether the game in play reads analog sticks (a PlayStation disc with
+    /// the DualShock pad).
+    pub(super) fn sticks_are_analog(&self) -> bool {
+        self.game.is_some() && self.current_cart_platform() == Platform::Psx
+            && self.settings.psx_dualshock
+    }
+
+    /// A controller's two sticks (left x, y, right x, y; -1..1), for the
+    /// port it plays on.
+    pub(super) fn pad_analog(&mut self, device: i32, sticks: [f32; 4]) {
+        if !self.sticks_are_analog() { return; }
+        let fp = self.device_fp(device);
+        let Some(port) = self.controls.port_of(&fp) else { return };
+        // Sticks only reach the game while it plays, centred otherwise.
+        let sticks = if self.controls_moment().playing { sticks } else { [0.0; 4] };
+        if let Some(game) = self.game.as_mut() { game.set_analog(port, sticks); }
     }
 
     /// The button pressed while a Map or Detect waited for one.

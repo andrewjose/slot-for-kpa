@@ -47,6 +47,8 @@ struct Host {
     format: PixelFormat,
     audio: Vec<i16>,
     inputs: [u16; 2],
+    /// Each port's sticks: left x, y, right x, y.
+    analog: [[i16; 4]; 2],
     /// A second local player's buttons (NES, SNES, Mega Drive) for solo frames.
     port2: u16,
     // Borrowed memory descriptors, valid only while game/core are loaded.
@@ -568,7 +570,24 @@ unsafe extern "C" fn audio_batch(data: *const i16, frames: usize) -> usize {
 
 unsafe extern "C" fn input_poll() {}
 
-unsafe extern "C" fn input_state(port: c_uint, device: c_uint, _index: c_uint, id: c_uint) -> i16 {
+unsafe extern "C" fn input_state(port: c_uint, device: c_uint, index: c_uint, id: c_uint) -> i16 {
+    let device = device & DEVICE_MASK;
+    if device == DEVICE_ANALOG {
+        return with_host(|h| {
+            let pad = h.analog.get(port as usize)?;
+            match (index, id) {
+                // RETRO_DEVICE_INDEX_ANALOG_LEFT / RIGHT, ID_ANALOG_X / Y.
+                (0 | 1, 0 | 1) => Some(pad[(index * 2 + id) as usize]),
+                // RETRO_DEVICE_INDEX_ANALOG_BUTTON: a button's pressure,
+                // full when held.
+                (2, id) if id < 16 => {
+                    let held = h.inputs.get(port as usize).is_some_and(|i| (i >> id) & 1 != 0);
+                    Some(if held { i16::MAX } else { 0 })
+                }
+                _ => None,
+            }
+        }).flatten().unwrap_or(0);
+    }
     if device != DEVICE_JOYPAD {
         return 0;
     }
@@ -828,6 +847,7 @@ impl LibretroCore {
             format: PixelFormat::default(),
             audio: Vec::new(),
             inputs: [0; 2],
+            analog: [[0; 4]; 2],
             port2: 0,
             memory: Vec::new(),
             system_dir: cdir(system_dir)?,
@@ -1199,7 +1219,12 @@ impl RetroCore for LibretroCore {
             self.host.video = vec![0; (w * h * 4) as usize];
         }
         unsafe {
-            (self.api.set_controller_port_device)(0, DEVICE_JOYPAD);
+            // Port 1's device: a plain pad, unless slot. asked for another
+            // (a PlayStation DualShock) by the slot_port1_device option.
+            let port1 = self.host.options.get("slot_port1_device")
+                .and_then(|v| v.to_str().ok()?.parse::<c_uint>().ok())
+                .unwrap_or(DEVICE_JOYPAD);
+            (self.api.set_controller_port_device)(0, port1);
             // Home console Multiplayer plays the second player on port 2.
             if self.host.native { (self.api.set_controller_port_device)(1, DEVICE_JOYPAD); }
         }
@@ -1212,6 +1237,10 @@ impl RetroCore for LibretroCore {
 
     fn set_port2(&mut self, input: ButtonMask) {
         self.host.port2 = input.0;
+    }
+
+    fn set_analog(&mut self, port: usize, axes: [i16; 4]) {
+        if let Some(pad) = self.host.analog.get_mut(port) { *pad = axes; }
     }
 
     fn link_step_fault(&self) -> bool {
@@ -1551,6 +1580,7 @@ mod tests {
             format: PixelFormat::Xrgb8888,
             audio: Vec::new(),
             inputs: [0; 2],
+            analog: [[0; 4]; 2],
             port2: 0,
             memory: Vec::new(),
             system_dir: CString::new(".").unwrap(),
@@ -2656,6 +2686,25 @@ mod tests {
         let button = |id| unsafe { input_state(1, DEVICE_JOYPAD, 0, id) };
         assert_eq!(button(0), 1, "B is bit 0 of the libretro joypad");
         assert_eq!(button(8), 0, "A is not held on port 1");
+    }
+
+    #[test]
+    fn input_state_answers_each_ports_sticks() {
+        let mut host = host_with(HashMap::new(), false);
+        host.analog = [[100, -200, 300, -400], [1, 2, 3, 4]];
+        host.inputs = [ButtonMask::A, 0];
+        let _active = Active::bind(&mut host);
+
+        let read = |port, index, id| unsafe { input_state(port, DEVICE_ANALOG, index, id) };
+        assert_eq!((read(0, 0, 0), read(0, 0, 1)), (100, -200), "left stick x, y");
+        assert_eq!((read(0, 1, 0), read(0, 1, 1)), (300, -400), "right stick x, y");
+        assert_eq!(read(1, 1, 1), 4);
+        assert_eq!(read(0, 2, 8), i16::MAX, "A held: full pressure");
+        assert_eq!(read(0, 2, 0), 0, "B not held");
+        assert_eq!(read(2, 0, 0), 0, "no port 3");
+        // A subclassed joypad (a DualShock's id) still answers buttons.
+        let joypad_subclass = (1 + 1) << 8 | DEVICE_JOYPAD;
+        assert_eq!(unsafe { input_state(0, joypad_subclass, 0, 8) }, 1);
     }
 
     #[test]

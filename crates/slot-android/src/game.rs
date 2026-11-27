@@ -419,6 +419,42 @@ fn named_rom_alias(storage: &Path, rom: &Path, rom_stem: &str) -> Result<PathBuf
 
 /// SNES and Mega Drive pads use X and Y (and L/R) as real buttons; the
 /// X/Y Buttons setting (turbo or a second A/B) is for the two-button ones.
+/// The PlayStation pad and memory cards, from the settings: read when a
+/// disc boots (the runtime sets them just before), so a change applies
+/// from the next game.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PsxPad {
+    pub dualshock: bool,
+    pub vibration: bool,
+    pub card1: &'static str,
+    pub card2: &'static str,
+}
+
+pub static PSX_PAD: std::sync::Mutex<PsxPad> = std::sync::Mutex::new(PsxPad {
+    dualshock: true, vibration: true, card1: "libretro", card2: "none",
+});
+
+pub fn set_psx_pad(pad: PsxPad) {
+    *PSX_PAD.lock().unwrap_or_else(|e| e.into_inner()) = pad;
+}
+
+/// The PCSX ReARMed options for a pad (in the order they are set).
+pub fn psx_pad_options(pad: PsxPad) -> [(&'static str, &'static str); 5] {
+    [
+        // Card 1 "libretro" is the game's own save file (like a cart's
+        // battery); "shared" and "serial" (per disc) are card files the
+        // core keeps itself. Unset, the pinned core leaves both slots empty.
+        ("pcsx_rearmed_memcard1", pad.card1),
+        ("pcsx_rearmed_memcard2", pad.card2),
+        ("pcsx_rearmed_vibration", if pad.vibration { "enabled" } else { "disabled" }),
+        // The ANALOG button: games that start in digital mode switch with
+        // L1+R1+L3 (the DualShock's own button isn't on a handheld).
+        ("pcsx_rearmed_analog_combo", if pad.dualshock { "l1+r1+l3" } else { "disabled" }),
+        // RETRO_DEVICE_SUBCLASS(ANALOG, 1) = DualShock; JOYPAD = standard.
+        ("slot_port1_device", if pad.dualshock { "517" } else { "1" }),
+    ]
+}
+
 fn pad_buttons(full_pad: bool, buttons: ButtonMask, turbo: bool, frame: u32) -> ButtonMask {
     if full_pad { buttons } else { xy_buttons(buttons, turbo, frame) }
 }
@@ -751,6 +787,8 @@ impl GameSession {
                 // The PlayStation's own resolution: the picture is scaled
                 // by slot., and the frame stays within NATIVE_MAX.
                 core.set_option("pcsx_rearmed_neon_enhancement_enable", "disabled");
+                let pad = *PSX_PAD.lock().unwrap_or_else(|e| e.into_inner());
+                for (key, value) in psx_pad_options(pad) { core.set_option(key, value); }
             }
             // System Card 3 (syscard3.pce) from the BIOS folder: the core's
             // default, and what most CD games need.
@@ -2000,6 +2038,13 @@ impl GameSession {
         self.sun_luminance = luminance;
         self.give_sun(luminance.unwrap_or_else(||
             crate::emulation::lux_luminance(slot_retro::sensors::illuminance())));
+    }
+
+    /// A pad's sticks (-1..1, up and left negative), for a DualShock.
+    pub fn set_analog(&mut self, port: usize, sticks: [f32; 4]) {
+        let axes = sticks.map(|v| (v.clamp(-1.0, 1.0) * 32767.0) as i16);
+        self.core.set_analog(port, axes);
+        if let Some(copy) = self.runahead_secondary.as_mut() { copy.set_analog(port, axes); }
     }
 
     fn give_sun(&mut self, luminance: u8) {

@@ -130,6 +130,7 @@ class MainActivity : Activity() {
     external fun nativeKey(code: Int, pressed: Boolean)
     /** A key of a controller: Settings > Controls picks its port and button. */
     external fun nativePadKey(device: Int, code: Int, pressed: Boolean, stick: Boolean)
+    external fun nativePadAnalog(device: Int, lx: Float, ly: Float, rx: Float, ry: Float)
     /** Every controller connected now, as [{"id","name","fp"}]. */
     external fun nativeControllers(json: String)
     external fun nativeResetInput()
@@ -1486,8 +1487,35 @@ class MainActivity : Activity() {
     // A D-pad reporting as a hat (ABS_HAT0X/Y) reaches Android as joystick
     // motion, which the framework only turns into DPAD keys afterwards.
     // RetroArch reads the hat axes itself: so does slot., with no detour.
+    // The last stick position sent per device: left x, y, right x, y.
+    private val sticksSent = HashMap<Int, FloatArray>()
+
+    /** A controller's two sticks for a DualShock game (nativePadAnalog). */
+    private fun sendSticks(event: MotionEvent, device: InputDevice) {
+        fun stick(axis: Int): Float {
+            val range = device.getMotionRange(axis, event.source) ?: return 0f
+            val value = event.getAxisValue(axis)
+            return if (Math.abs(value) <= range.flat) 0f else value.coerceIn(-1f, 1f)
+        }
+        // The right stick is Z/RZ on most pads, RX/RY on some.
+        val rightOnR = device.getMotionRange(MotionEvent.AXIS_Z) == null &&
+            device.getMotionRange(MotionEvent.AXIS_RX) != null
+        val now = floatArrayOf(
+            stick(MotionEvent.AXIS_X), stick(MotionEvent.AXIS_Y),
+            stick(if (rightOnR) MotionEvent.AXIS_RX else MotionEvent.AXIS_Z),
+            stick(if (rightOnR) MotionEvent.AXIS_RY else MotionEvent.AXIS_RZ),
+        )
+        val last = sticksSent[event.deviceId]
+        if (last != null && last.indices.all { Math.abs(last[it] - now[it]) < 0.004f }) return
+        sticksSent[event.deviceId] = now
+        nativePadAnalog(event.deviceId, now[0], now[1], now[2], now[3])
+    }
+
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         val device = event.device
+        if (event.action == MotionEvent.ACTION_MOVE && device != null &&
+            event.isFromSource(InputDevice.SOURCE_JOYSTICK)
+        ) sendSticks(event, device)
         if (event.action != MotionEvent.ACTION_MOVE ||
             !event.isFromSource(InputDevice.SOURCE_JOYSTICK) ||
             device?.getMotionRange(MotionEvent.AXIS_HAT_X) == null

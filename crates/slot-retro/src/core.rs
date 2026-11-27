@@ -26,6 +26,9 @@ impl ButtonMask {
     /// Only a PlayStation game gets L2 / R2: elsewhere they are slot.'s.
     pub const L2: u16 = 1 << 12;
     pub const R2: u16 = 1 << 13;
+    /// Stick clicks, for a PlayStation game's DualShock.
+    pub const L3: u16 = 1 << 14;
+    pub const R3: u16 = 1 << 15;
 
     pub fn without_turbo(self) -> ButtonMask {
         ButtonMask(self.0 & !(Self::X | Self::Y))
@@ -108,6 +111,10 @@ pub trait RetroCore: Send {
     /// A second local player's buttons, used by every following solo frame
     /// (real or speculative) until changed. Cores with one player ignore it.
     fn set_port2(&mut self, _input: ButtonMask) {}
+    /// A port's two sticks (left x, y, right x, y; -32768..32767, up and
+    /// left negative), for cores that read RETRO_DEVICE_ANALOG (a
+    /// PlayStation DualShock). Kept until changed.
+    fn set_analog(&mut self, _port: usize, _axes: [i16; 4]) {}
     /// Reject incomplete native GB/GBC lockstep frames before advancing netplay.
     fn link_step_fault(&self) -> bool { false }
     fn set_option(&mut self, _key: &str, _value: &str) {}

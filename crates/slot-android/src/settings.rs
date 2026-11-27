@@ -128,6 +128,41 @@ impl Blending {
     }
 }
 
+/// Settings > Emulation > PS1 Memory Card 1: PCSX ReARMed's own card types
+/// (Andrew, 2026-11-26). Per Game is the game's save file (.srm, kept with
+/// the ROMs); Shared and Per Disc are .mcd files in slot.'s own storage.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PsxCard {
+    #[default]
+    PerGame,
+    Shared,
+    PerDisc,
+    Off,
+}
+impl PsxCard {
+    /// Card 1 offers all four; card 2 has no Per Game (the core keeps only
+    /// card 1 in the game's save file).
+    pub fn step(self, right: bool, card2: bool) -> Self {
+        let all: &[PsxCard] = if card2 { &[PsxCard::Off, PsxCard::Shared, PsxCard::PerDisc] }
+            else { &[PsxCard::PerGame, PsxCard::Shared, PsxCard::PerDisc, PsxCard::Off] };
+        let at = all.iter().position(|c| *c == self).unwrap_or(0);
+        all[if right { (at + 1) % all.len() } else { (at + all.len() - 1) % all.len() }]
+    }
+    /// The value of pcsx_rearmed_memcard1 / 2.
+    pub fn option(self) -> &'static str {
+        match self {
+            PsxCard::PerGame => "libretro",
+            PsxCard::Shared => "shared",
+            PsxCard::PerDisc => "serial",
+            PsxCard::Off => "none",
+        }
+    }
+}
+
+fn psx_card2_default() -> PsxCard { PsxCard::Off }
+fn yes() -> bool { true }
+
 /// Interface > Orientation: how slot.'s window turns. Landscape is what
 /// slot. always did; Portrait suits handhelds like the RG Rotate, which
 /// otherwise start landscape and then turn (Andrew, 2026-11-26). The
@@ -494,6 +529,15 @@ pub struct Settings {
     /// Missing legacy field retains original 24h display.
     pub time_format: TimeFormat,
     pub orientation: Orientation,
+    /// PS1: a DualShock (sticks, L3/R3, analog mode) or a standard pad.
+    #[serde(default = "yes")]
+    pub psx_dualshock: bool,
+    /// PS1: the DualShock's rumble.
+    #[serde(default = "yes")]
+    pub psx_vibration: bool,
+    pub psx_card1: PsxCard,
+    #[serde(default = "psx_card2_default")]
+    pub psx_card2: PsxCard,
     /// Clock & Battery at the top of the shelf instead of on the bar.
     #[serde(default)]
     pub clock_on_top: bool,
@@ -585,6 +629,8 @@ impl Default for Settings {
             show_wifi: false, show_bluetooth: false, show_integrations: false,
             time_format: TimeFormat::TwentyFourHour,
             orientation: Orientation::Landscape,
+            psx_dualshock: true, psx_vibration: true,
+            psx_card1: PsxCard::PerGame, psx_card2: PsxCard::Off,
             clock_on_top: false, icons_on_bottom: false, apps_running_only: false,
             cart_studio_size: 0,
             status_opt_in_v2: true, wallpaper: WallpaperPick::Default,
@@ -1000,6 +1046,10 @@ impl Settings {
             33 => self.icons_on_bottom = !self.icons_on_bottom,
             28 => self.time_format = self.time_format.toggle(),
             91 => self.orientation = self.orientation.step(right),
+            92 => self.psx_dualshock = !self.psx_dualshock,
+            93 => self.psx_vibration = !self.psx_vibration,
+            94 => self.psx_card1 = self.psx_card1.step(right, false),
+            95 => self.psx_card2 = self.psx_card2.step(right, true),
             _ => return false,
         }
         *self != before

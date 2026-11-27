@@ -827,3 +827,33 @@ fn orientation_is_an_interface_setting() {
     s.change(91, false);
     assert_eq!(s.orientation, Orientation::Device);
 }
+
+#[test]
+fn playstation_pad_and_cards_are_emulation_settings() {
+    use crate::settings::PsxCard;
+    let rows: Vec<&str> = EMULATION_ROWS.iter().map(|&r| MENU_TEXT[r]).collect();
+    for row in ["PS1 Controller", "PS1 Vibration", "PS1 Memory Card 1", "PS1 Memory Card 2"] {
+        assert!(rows.contains(&row), "{row} is in Emulation");
+    }
+    assert_eq!(SETTING_VALUE_NAMES[PSX_VALUE], "DUALSHOCK");
+    assert_eq!(SETTING_VALUE_NAMES[PSX_VALUE + 4], "PER DISC");
+    let mut s = crate::settings::Settings::default();
+    assert!(s.psx_dualshock && s.psx_vibration);
+    assert_eq!((s.psx_card1, s.psx_card2), (PsxCard::PerGame, PsxCard::Off));
+    s.change(92, true);
+    assert!(!s.psx_dualshock);
+    s.change(94, true);
+    assert_eq!(s.psx_card1, PsxCard::Shared);
+    s.change(95, false);
+    assert_eq!(s.psx_card2, PsxCard::PerDisc, "card 2 has no Per Game");
+    s.change(95, true);
+    assert_eq!(s.psx_card2, PsxCard::Off);
+    // The core leaves the slots empty unless both are set explicitly.
+    let options = crate::game::psx_pad_options(crate::game::PsxPad {
+        dualshock: true, vibration: false, card1: PsxCard::PerGame.option(), card2: PsxCard::Off.option(),
+    });
+    assert!(options.contains(&("pcsx_rearmed_memcard1", "libretro")));
+    assert!(options.contains(&("pcsx_rearmed_memcard2", "none")));
+    assert!(options.contains(&("pcsx_rearmed_vibration", "disabled")));
+    assert!(options.contains(&("slot_port1_device", "517")), "RETRO_DEVICE_SUBCLASS(ANALOG, 1)");
+}

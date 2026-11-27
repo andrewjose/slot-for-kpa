@@ -94,6 +94,8 @@ enum Input {
     Key(i32, bool),
     /// A key of one of Android's input devices (Settings > Controls).
     PadKey { device: i32, code: i32, pressed: bool, stick: bool },
+    /// A controller's sticks: left x, y, right x, y (-1..1).
+    PadAnalog { device: i32, sticks: [f32; 4] },
     /// Every controller connected now.
     Controllers(Vec<crate::controls::Device>),
     // Predefined shelf UI states from Android: no untrusted or long text on GL.
@@ -347,6 +349,7 @@ fn controls(code: i32) -> u16 {
 fn disc_controls(code: i32) -> u16 {
     match code {
         104 => ButtonMask::L2, 105 => ButtonMask::R2,
+        106 => ButtonMask::L3, 107 => ButtonMask::R3,
         other => controls(other),
     }
 }
@@ -543,7 +546,7 @@ enum LcdFrom {
     Pause { row: usize },
 }
 
-const MENU_TEXT: [&str; 145] = [
+const MENU_TEXT: [&str; 149] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -689,6 +692,10 @@ const MENU_TEXT: [&str; 145] = [
     "Dark Frames",                        // 142, dark refreshes per frame
     "Sensitivity",                        // 143, tilt and gyro games (upstream v2.3.0)
     "Orientation",                        // 144, Interface (RG Rotate)
+    "PS1 Controller",                     // 145, Emulation (PCSX ReARMed)
+    "PS1 Vibration",                      // 146
+    "PS1 Memory Card 1",                  // 147
+    "PS1 Memory Card 2",                  // 148
 ];
 /// MENU_TEXT's Sensitivity row (tilt and gyro games).
 const SENSITIVITY_TEXT: usize = 143;
@@ -737,7 +744,7 @@ const RECENTS_RACK: usize = Platform::ALL.len();
 const FAVORITES_RACK: usize = RECENTS_RACK + 1;
 
 /// Every Settings value face, by index: setting_face gives these indices.
-const SETTING_VALUE_NAMES: [&str; 140] = ["2×", "3×", "4×", "6×", "ON", "OFF",
+const SETTING_VALUE_NAMES: [&str; 145] = ["2×", "3×", "4×", "6×", "ON", "OFF",
                               "LCD3x", "Grid", "Dot", "Simpletex",
                               "STANDARD", "RESPONSIVE", "1 FRAME", "2 FRAMES",
                               "DISPLAY SYNC", "TURBO A/B", "A/B",
@@ -776,7 +783,14 @@ const SETTING_VALUE_NAMES: [&str; 140] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                // 136: Interface > Wallpaper's OLED Black.
                                "OLED Black",
                                // 137: Interface > Orientation.
-                               "LANDSCAPE", "PORTRAIT", "FOLLOW DEVICE"];
+                               "LANDSCAPE", "PORTRAIT", "FOLLOW DEVICE",
+                               // 140: Emulation > PS1 rows.
+                               "DUALSHOCK", "STANDARD", "PER GAME", "SHARED", "PER DISC"];
+/// SETTING_VALUE_NAMES' PS1 values: DualShock, Standard, then the cards'.
+const PSX_VALUE: usize = 140;
+/// Settings > Emulation: its rows (MENU_TEXT) and their setting keys.
+const EMULATION_ROWS: [usize; 7] = [51, 52, 55, 145, 146, 147, 148];
+const EMULATION_KEYS: [usize; 7] = [10, 11, 12, 92, 93, 94, 95];
 /// SETTING_VALUE_NAMES' first Orientation value (Landscape, Portrait, Device).
 const ORIENTATION_VALUE: usize = 137;
 /// SETTING_VALUE_NAMES' "OLED Black" (Interface > Wallpaper).
@@ -892,6 +906,17 @@ fn setting_face(key: usize, settings: &Settings, scoped: &Settings,
         28 => if settings.time_format==crate::settings::TimeFormat::TwelveHour
             {35}else{36},
         91 => ORIENTATION_VALUE + settings.orientation as usize,
+        92 => PSX_VALUE + if settings.psx_dualshock { 0 } else { 1 },
+        93 => if settings.psx_vibration { 4 } else { 5 },
+        94 | 95 => {
+            use crate::settings::PsxCard;
+            match if key == 94 { settings.psx_card1 } else { settings.psx_card2 } {
+                PsxCard::PerGame => PSX_VALUE + 2,
+                PsxCard::Shared => PSX_VALUE + 3,
+                PsxCard::PerDisc => PSX_VALUE + 4,
+                PsxCard::Off => 5,
+            }
+        }
         29..=31 | 41..=43 => core_value(Engine::core_key_platform(key)
             .map_or(Core::Mgba, |platform| cores[platform as usize])),
         // Frame Blending, LCD Effect and Dither Blending: the game's own in
@@ -3552,6 +3577,7 @@ impl Engine {
             }
             Input::PadKey { device, code, pressed, stick } =>
                 self.pad_key(device, code, pressed, stick),
+            Input::PadAnalog { device, sticks } => self.pad_analog(device, sticks),
             Input::Controllers(devices) => self.controllers_changed(devices),
             Input::Key(code, pressed) => {
                 // A Map or Detect waits for a controller's button (pad_key);
@@ -4021,8 +4047,9 @@ impl Engine {
                     // local time travel or accelerated single-player frames.
                     if self.game.as_ref().is_some_and(GameSession::linked)
                         && (code == 104 || code == 105) && !disc { return; }
-                    // Stick clicks (L3 / R3) set Boktai's sun, as in mGBA.
-                    if code == 106 || code == 107 {
+                    // Stick clicks (L3 / R3) set Boktai's sun, as in mGBA;
+                    // a PlayStation game plays them (its DualShock's).
+                    if (code == 106 || code == 107) && !disc {
                         if pressed && self.game.as_ref().is_some_and(GameSession::solar) {
                             self.nudge_sun(code == 107);
                         } else if pressed && self.game.as_ref().is_some_and(GameSession::motion) {
@@ -4243,9 +4270,9 @@ impl Engine {
                             },
                             ShelfOverlay::EmulationSettings { row } => match code {
                                 19 | 20 => self.overlay = ShelfOverlay::EmulationSettings {
-                                    row: move_menu_row(row, code, 3),
+                                    row: move_menu_row(row, code, EMULATION_KEYS.len()),
                                 },
-                                21 | 22 => self.change_setting(row + 10, code == 22),
+                                21 | 22 => self.change_setting(EMULATION_KEYS[row], code == 22),
                                 97 => self.overlay = ShelfOverlay::Settings { row: 3 },
                                 108 => self.overlay = ShelfOverlay::None,
                                 _ => {}
@@ -4692,6 +4719,12 @@ impl Engine {
                 .get(self.shelves[self.active].index)
                 .map_or("", |cart| cart.stem.as_str());
             let effective_settings = self.game_settings();
+            crate::game::set_psx_pad(crate::game::PsxPad {
+                dualshock: effective_settings.psx_dualshock,
+                vibration: effective_settings.psx_vibration,
+                card1: effective_settings.psx_card1.option(),
+                card2: effective_settings.psx_card2.option(),
+            });
             let started = Instant::now();
             let resume_preference = NEXT_RESUME_MODE.swap(-1, Ordering::AcqRel);
             let wants_state = match resume_preference {
@@ -6833,7 +6866,7 @@ impl Engine {
                 self.draw_settings_menu(59, &INTERFACE_ROWS, row, &INTERFACE_KEYS, out);
             }
             ShelfOverlay::EmulationSettings { row } => {
-                self.draw_settings_menu(50, &[51, 52, 55], row, &[10, 11, 12], out);
+                self.draw_settings_menu(50, &EMULATION_ROWS, row, &EMULATION_KEYS, out);
             }
             ShelfOverlay::PauseBfiSettings { row } => {
                 self.draw_settings_menu(139, &BFI_ROWS, row, &BFI_KEYS, out);
@@ -8878,7 +8911,7 @@ mod settings_value_tests {
             for key in GAMEPLAY_KEYS {
                 keys.push(("Gameplay".into(), key, platform));
             }
-            for key in INTERFACE_KEYS.into_iter().chain([10, 11, 12]).chain(16..=20) {
+            for key in INTERFACE_KEYS.into_iter().chain(EMULATION_KEYS).chain(16..=20) {
                 keys.push(("Interface/Emulation/General".into(), key, platform));
             }
         }
