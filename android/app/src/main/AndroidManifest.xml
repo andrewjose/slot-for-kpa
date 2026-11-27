@@ -45,9 +45,23 @@
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="unspecified">
-            <!-- Interface > Orientation sets the way up in onCreate
-                 (SlotOrientation): Landscape unless chosen otherwise. -->
+            android:screenOrientation="landscape">
+            <!-- Interface > Orientation: Landscape here, from the first
+                 frame; Follow device turns it in onCreate. Portrait is
+                 PortraitActivity, which Android must start upright before
+                 anything is drawn (SlotOrientation enables one launcher). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".PortraitActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:enabled="false"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

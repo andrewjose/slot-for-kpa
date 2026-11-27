@@ -69,7 +69,7 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 /** Android owns EGL, lifecycle and physical input; Rust owns Slot rendering. */
-class MainActivity : Activity() {
+open class MainActivity : Activity() {
     // dp/sp follow the screen height so Android screens keep the KONKR's look.
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(newBase)
@@ -797,7 +797,11 @@ class MainActivity : Activity() {
                 18 -> showPeerCartridgeConsent()
                 23 -> shareLinkCode()
                 40 -> saveScreenshot()
-                41, 42, 43 -> applyOrientation(SlotOrientation.fromAction(action))
+                41, 42, 43 -> {
+                    applyOrientation(SlotOrientation.fromAction(action))
+                    // Next launch starts this way up from its first frame.
+                    SlotOrientation.useLauncher(this, portrait = action == 42)
+                }
                 19 -> slotUpdater.check(true)
                 20 -> slotUpdater.openNotes()
                 21 -> {
@@ -998,6 +1002,8 @@ class MainActivity : Activity() {
         // Interface > Orientation, before anything is drawn: the RG Rotate
         // and the like open straight in portrait instead of turning.
         applyOrientation(SlotOrientation.saved(filesDir))
+        SlotOrientation.useLauncher(this, SlotOrientation.saved(filesDir) ==
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
         // The personal build's own wallpaper, on a fresh install only.
         PersonalDefaults.seed(this)
         getSystemService(InputManager::class.java)

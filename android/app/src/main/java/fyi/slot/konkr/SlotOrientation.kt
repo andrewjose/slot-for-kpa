@@ -1,6 +1,10 @@
 package fyi.slot.konkr
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.util.Log
 import org.json.JSONObject
 import java.io.File
 
@@ -24,6 +28,45 @@ internal object SlotOrientation {
         42 -> forName("portrait")
         43 -> forName("device")
         else -> forName("landscape")
+    }
+
+    /**
+     * Portrait must be in the manifest to hold from the first frame (the
+     * starting window is drawn before onCreate): PortraitActivity is the
+     * launcher entry while Portrait is chosen, MainActivity (landscape)
+     * otherwise. Only one is enabled, so one slot. ever runs. A change takes
+     * effect from the next launch; the running one turns at once.
+     */
+    fun useLauncher(context: Context, portrait: Boolean) {
+        val pm = context.packageManager
+        fun set(cls: Class<*>, on: Boolean) {
+            val name = ComponentName(context, cls)
+            val want = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            try {
+                if (pm.getComponentEnabledSetting(name) != want) {
+                    pm.setComponentEnabledSetting(name, want, PackageManager.DONT_KILL_APP)
+                }
+            } catch (error: Exception) {
+                Log.w("SlotOrientation", "Launcher entry not switched", error)
+            }
+        }
+        // Enable the new entry first, so there is never no launcher icon.
+        if (portrait) {
+            set(PortraitActivity::class.java, true)
+            set(MainActivity::class.java, false)
+        } else {
+            set(MainActivity::class.java, true)
+            set(PortraitActivity::class.java, false)
+        }
+    }
+
+    /** The launcher entry in use (for the home app's hand-over). */
+    fun launcherClass(context: Context): Class<out MainActivity> {
+        val state = context.packageManager.getComponentEnabledSetting(
+            ComponentName(context, PortraitActivity::class.java))
+        return if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) PortraitActivity::class.java
+            else MainActivity::class.java
     }
 
     /** The saved choice; Landscape when there is none or it can't be read. */
