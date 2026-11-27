@@ -4343,14 +4343,9 @@ impl Engine {
                             self.overlay = ShelfOverlay::Menu { row: 0 };
                             return;
                         }
-                        109 if !self.inserted && !self.shelves[self.active].carts.is_empty()
-                            && Core::single(self.current_cart_platform()) => {
-                            // One core: no board to pick from.
-                            let core = Core::default_for(self.current_cart_platform());
-                            set_message(format!("{} plays every {} game.", core.text(),
-                                self.current_cart_platform().name()));
-                            return;
-                        }
+                        // One-core systems (PS1, TG-CD) open the menu too, with
+                        // their one core, so X there toggles the file name band
+                        // like everywhere else (Andrew, 2026-11-25).
                         109 if !self.inserted && !self.shelves[self.active].carts.is_empty() => {
                             let selected = &self.shelves[self.active].carts[self.shelves[self.active].index];
                             let face = board_face(selected);
@@ -7017,6 +7012,8 @@ impl Engine {
         }
         for (i, core) in [picker.left(), picker.right()].into_iter().enumerate() {
             if !layout.sockets { break; }
+            // A one-core system: its single socket only.
+            if i == 1 && picker.right() == picker.left() { break; }
             let tex = self.socket_textures[core.index()];
             let (x, y) = layout.at(board, layout.socket_u[i], layout.socket_v);
             out.push(Draw::Tex {

@@ -793,3 +793,20 @@ fn black_frame_insertion_on_sets_native_frame_pacing() {
     engine.force_native_pacing();
     assert!(!engine.settings.responsive_loop, "BFI needs Native frame pacing");
 }
+
+#[test]
+fn one_core_systems_open_the_select_menu_too() {
+    use slot_store::{Core, Platform};
+    for platform in [Platform::Psx, Platform::Tgcd] {
+        assert!(Core::single(platform));
+        let mut picker = crate::core_picker::CorePicker::open_between(
+            Core::primary_for(platform), Core::primary_for(platform),
+            Core::alternate_for(platform), 0);
+        picker.start(0);
+        // Its one core can't move: a nudge is refused, A keeps it.
+        assert_eq!(picker.press(crate::core_picker::Press::Right, 1000),
+            crate::core_picker::Outcome::Refused);
+        assert_eq!(picker.press(crate::core_picker::Press::Keep, 2000),
+            crate::core_picker::Outcome::Write(Core::primary_for(platform)));
+    }
+}
