@@ -11,7 +11,8 @@ class SystemsTest {
         assertEquals("SNES", Systems.platformFor("smc"))
         assertEquals("MD", Systems.platformFor("gen"))
         assertEquals("GB", Systems.platformFor("gb"))
-        assertEquals(null, Systems.platformFor("cso"))
+        assertEquals("PSP", Systems.platformFor("cso"))
+        assertEquals(null, Systems.platformFor("zso"))
     }
 
     @Test fun coreFoldersFollowTheNativePickOnlyWhenItRunsTheSystem() {
