@@ -22,7 +22,8 @@ internal object RomFolders {
         SNES(Systems.SNES, "Super Nintendo", "SNES"),
         MD(Systems.MD, "Mega Drive", "MD"),
         PSX(Systems.PSX, "PlayStation", "PSX"),
-        TGCD(Systems.TGCD, "TurboGrafx-CD", "TGCD");
+        TGCD(Systems.TGCD, "TurboGrafx-CD", "TGCD"),
+        PSP(Systems.PSP, "PSP", "PSP");
 
         companion object {
             fun of(platform: String): System? = entries.firstOrNull { it.platform == platform }

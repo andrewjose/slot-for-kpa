@@ -123,6 +123,7 @@ impl Engine {
             Platform::Nes => "nes", Platform::Snes => "snes", Platform::Md => "md",
             Platform::Psx => "psx",
             Platform::Tgcd => "tgcd",
+            Platform::Psp => "psp",
         }
     }
 

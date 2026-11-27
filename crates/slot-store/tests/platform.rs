@@ -3,13 +3,14 @@ use slot_store::Platform;
 #[test]
 fn every_platform_has_a_directory() {
     let names: Vec<&str> = Platform::ALL.iter().map(|p| p.dir_name()).collect();
-    assert_eq!(names, vec!["GBA", "GB", "GBC", "NES", "SNES", "MD", "PSX", "TGCD"]);
+    assert_eq!(names, vec!["GBA", "GB", "GBC", "NES", "SNES", "MD", "PSX", "TGCD", "PSP"]);
 }
 
 #[test]
 fn every_platform_is_a_shelf_of_its_own() {
     assert_eq!(Platform::ALL, [Platform::Gba, Platform::Gb, Platform::Gbc,
-        Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx, Platform::Tgcd]);
+        Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx, Platform::Tgcd,
+        Platform::Psp]);
     for (i, p) in Platform::ALL.iter().enumerate() {
         assert!(
             !Platform::ALL[..i].contains(p),
@@ -40,6 +41,8 @@ fn each_platform_takes_only_its_own_extensions() {
     assert!(Platform::Tgcd.accepts(std::path::Path::new("Ys Book I & II (USA).chd")));
     assert!(!Platform::Tgcd.accepts(std::path::Path::new("Ys Book I & II (USA).cue")));
     assert!(Platform::Tgcd.disc() && !Platform::Tgcd.handheld());
+    assert!(Platform::Psp.accepts(std::path::Path::new("Patapon (USA).cso")));
+    assert!(Platform::Psp.external() && !Platform::Psx.external());
 }
 
 #[test]

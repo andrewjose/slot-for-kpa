@@ -45,7 +45,19 @@ class SystemsTest {
         assertEquals("/proc/self/fd/57", DiscSource.fdPath(57))
         // ES-DE's psx folder is searched now that slot. plays it.
         assertFalse("psx" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
-        assertTrue("psp" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+        // So is the psp folder: its games go to the PPSSPP app.
+        assertFalse("psp" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+        assertTrue("psvita" in RomLibrary.OTHER_SYSTEM_DIRECTORIES)
+    }
+
+    @Test fun anIsoInAPspFolderIsAPspGame() {
+        assertEquals("PSP", Systems.platformFor("iso", tgcdFolder = false, pspFolder = true))
+        assertEquals("PSP", Systems.platformFor("chd", tgcdFolder = false, pspFolder = true))
+        assertEquals("PSX", Systems.platformFor("iso", tgcdFolder = false))
+        assertEquals("a CSO is always the PSP's", "PSP", Systems.platformFor("cso"))
+        assertTrue(Systems.isDisc("CSO") && "cso" in Systems.ROM_EXTENSIONS)
+        assertTrue(Systems.isPspFolder("PSP") && !Systems.isPspFolder("psx"))
+        assertEquals("org.ppsspp.ppsspp", PspHandoff.PACKAGES.last())
     }
 
     @Test fun aChdInATurboGrafxCdFolderIsATurboGrafxCdGame() {

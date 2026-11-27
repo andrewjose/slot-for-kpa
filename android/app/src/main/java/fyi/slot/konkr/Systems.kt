@@ -18,6 +18,8 @@ internal object Systems {
     const val MD = "MD"
     const val PSX = "PSX"
     const val TGCD = "TGCD"
+    /** A launcher shelf: its games are handed to the PPSSPP app (PspHandoff). */
+    const val PSP = "PSP"
 
     private val NES_EXT = setOf("nes", "fc", "unf", "unif")
     private val SNES_EXT = setOf("sfc", "smc")
@@ -26,6 +28,15 @@ internal object Systems {
     /** PlayStation discs: CHD, PBP, ISO, a cue sheet (its .bin tracks are
      *  found beside it at launch, DiscSource) or a playlist of them. */
     val DISC_EXT = setOf("chd", "pbp", "iso", "cue", "m3u")
+    /** PSP games: a CSO anywhere; an ISO, CHD or PBP in a PSP folder
+     *  (elsewhere those are PlayStation discs). */
+    val PSP_EXT = setOf("iso", "cso", "chd", "pbp")
+    private val PSP_FOLDERS = setOf("psp", "playstation portable", "playstationportable",
+        "sony psp", "playstation_portable")
+
+    /** A folder whose ISOs, CHDs and PBPs are PSP games. */
+    fun isPspFolder(name: String) = lower(name) in PSP_FOLDERS
+
     /** TurboGrafx-CD discs: a CHD or a cue sheet, in a TurboGrafx-CD folder
      *  (neither says which system it is for; elsewhere it is a PlayStation's).
      *  No ISO: Beetle PCE Fast doesn't read one. */
@@ -39,11 +50,14 @@ internal object Systems {
 
     /** The shelf for a file found in a folder (`tgcdFolder`: in a
      *  TurboGrafx-CD folder, at any depth). */
-    fun platformFor(ext: String, tgcdFolder: Boolean): String? =
-        if (tgcdFolder && lower(ext) in TGCD_EXT) TGCD else platformFor(ext)
+    fun platformFor(ext: String, tgcdFolder: Boolean, pspFolder: Boolean = false): String? = when {
+        pspFolder && lower(ext) in PSP_EXT -> PSP
+        tgcdFolder && lower(ext) in TGCD_EXT -> TGCD
+        else -> platformFor(ext)
+    }
 
     /** Every cartridge (and disc) extension, without the .zip container. */
-    val ROM_EXTENSIONS: Set<String> = setOf("gba", "gb", "gbc") + NES_EXT + SNES_EXT + MD_EXT + DISC_EXT
+    val ROM_EXTENSIONS: Set<String> = setOf("gba", "gb", "gbc") + NES_EXT + SNES_EXT + MD_EXT + DISC_EXT + "cso"
 
     /** The cartridge home consoles: shells, labels and headers. */
     val HOME_PLATFORMS = setOf(NES, SNES, MD)
@@ -59,6 +73,8 @@ internal object Systems {
         in SNES_EXT -> SNES
         in MD_EXT -> MD
         in DISC_EXT -> PSX
+        // Only the PSP compresses its UMDs this way.
+        "cso" -> PSP
         else -> null
     }
 
@@ -66,7 +82,7 @@ internal object Systems {
     fun isHome(ext: String) = platformFor(ext) in HOME_PLATFORMS || isDisc(ext)
 
     /** A disc image: read where it is, never copied into the cache. */
-    fun isDisc(ext: String) = lower(ext) in DISC_EXT
+    fun isDisc(ext: String) = lower(ext) in DISC_EXT || lower(ext) == "cso"
 
     /** libretro key -> RetroArch core name, also its saves/states folder. */
     private val FOLDERS = linkedMapOf(

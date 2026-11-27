@@ -6,7 +6,7 @@ const FILE: &str="konkr-shelf-focus.json";
 pub struct Focus { pub rack: usize, pub uri: String }
 /// The file keeps the rack numbers from before the disc shelves (six
 /// systems, then Recents 6 and Favorites 7); the systems added since (the
-/// PlayStation, the TurboGrafx-CD) are 8 on, in Platform::ALL order.
+/// PlayStation, the TurboGrafx-CD, the PSP) are 8 on, in Platform::ALL order.
 const FIRST_SYSTEMS: usize = 6;
 fn saved_rack(rack: usize) -> usize {
     let systems = slot_store::Platform::ALL.len();
@@ -55,13 +55,13 @@ mod tests {
         assert_eq!(load(&dir),Some(focus));
         // Files from before the PlayStation shelf: 7 was Favorites.
         std::fs::write(dir.join(FILE), br#"{"rack":7,"uri":"content://roms/emerald"}"#).unwrap();
-        assert_eq!(load(&dir).map(|f| f.rack), Some(9));
-        for rack in 0..10 {
+        assert_eq!(load(&dir).map(|f| f.rack), Some(slot_store::Platform::ALL.len() + 1));
+        for rack in 0..slot_store::Platform::ALL.len() + 2 {
             let focus=Focus { rack, uri:"content://roms/any".into() };
             store(&dir,&focus).unwrap();
             assert_eq!(load(&dir),Some(focus));
         }
-        std::fs::write(dir.join(FILE), br#"{"rack":10,"uri":"content://roms/bad"}"#).unwrap();
+        std::fs::write(dir.join(FILE), br#"{"rack":11,"uri":"content://roms/bad"}"#).unwrap();
         assert_eq!(load(&dir), None, "out-of-range rack must not restore");
         std::fs::remove_dir_all(dir).unwrap();
     }

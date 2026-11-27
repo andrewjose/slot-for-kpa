@@ -61,9 +61,10 @@ internal object RomLibrary {
     }
     internal fun sameIndex(before: String, after: String): Boolean =
         equivalentEntries(indexEntries(before), indexEntries(after))
-    /** `tgcd`: inside a TurboGrafx-CD folder (Systems.isTgcdFolder). */
+    /** `tgcd`: inside a TurboGrafx-CD folder (Systems.isTgcdFolder);
+     *  `psp`: inside a PSP folder (Systems.isPspFolder). */
     private data class Directory(val id: String, val depth: Int, val folder: String,
-                                 val tgcd: Boolean = false)
+                                 val tgcd: Boolean = false, val psp: Boolean = false)
     /** A cart file listed in the first pass, read in the second. */
     private data class Candidate(val id: String, val name: String, val extension: String,
                                  val size: Long, val modified: Long, val dir: Directory)
@@ -87,7 +88,8 @@ internal object RomLibrary {
     fun scan(context: Context, treeUri: Uri, oldGamesJson: String? = null,
              progress: ((done: Int, total: Int) -> Unit)? = null,
              shelve: ((platform: String, colorOnly: Boolean) -> String?)? = null,
-             tgcdTree: Boolean = false, keepPrevious: Boolean = true): ScanResult {
+             tgcdTree: Boolean = false, keepPrevious: Boolean = true,
+             pspTree: Boolean = false): ScanResult {
         val previous = LinkedHashMap<String, JSONObject>()
         val cachedJson = oldGamesJson ?: try {
             val cache = java.io.File(context.filesDir, "rom-library-cache-v1.json")
@@ -119,7 +121,7 @@ internal object RomLibrary {
         val seen = HashSet<String>()
         // Search the user-selected SAF tree, including custom layouts, but
         // skip folders that ES-DE names after systems slot. does not run.
-        pending.add(Directory(rootId, 0, "", tgcdTree))
+        pending.add(Directory(rootId, 0, "", tgcdTree, pspTree))
         android.util.Log.i("SlotKonkr", "ROM scan scope: selected tree without other systems' folders")
         val games = JSONArray()
         var directories = 0
@@ -160,7 +162,8 @@ internal object RomLibrary {
                     if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                         if (dir.depth < MAX_DEPTH && !ignoredDirectory(name)) {
                             pending.add(Directory(id, dir.depth + 1, name,
-                                dir.tgcd || Systems.isTgcdFolder(name)))
+                                dir.tgcd || Systems.isTgcdFolder(name),
+                                dir.psp || Systems.isPspFolder(name)))
                         }
                         continue
                     }
@@ -248,7 +251,7 @@ internal object RomLibrary {
                 // index from before the TurboGrafx-CD shelf filed every CHD
                 // as a PlayStation's.
                 platform = if (Systems.isDisc(embeddedExtension))
-                    Systems.platformFor(embeddedExtension, dir.tgcd)!!
+                    Systems.platformFor(embeddedExtension, dir.tgcd, dir.psp)!!
                 else old.optString("platform")
                 gbTitle = old.optString("gb_title")
                 gbCode = old.optString("gb_code")
@@ -293,7 +296,7 @@ internal object RomLibrary {
                 val gbColor = !gba && !home && (embeddedExtension == "gbc" || colorOnly ||
                     container == "gbc" || container == "game boy color")
                 platform = when {
-                    home -> Systems.platformFor(embeddedExtension, dir.tgcd)!!
+                    home -> Systems.platformFor(embeddedExtension, dir.tgcd, dir.psp)!!
                     gba -> "GBA"
                     gbColor -> "GBC"
                     else -> "GB"
@@ -394,7 +397,7 @@ internal object RomLibrary {
         "naomi2", "naomigd", "nds", "neogeo", "neogeocd", "neogeocdjp", "ngage", "ngp",
         "ngpc", "odyssey2", "openbor", "oric", "palm", "pc", "pc88", "pc98", "pcarcade",
         "pcengine", "pcfx", "pico8", "plus4", "pokemini", "ports", "ps2", "ps3",
-        "ps4", "psp", "psvita", "pv1000", "quake", "samcoupe", "saturn", "saturnjp",
+        "ps4", "psvita", "pv1000", "quake", "samcoupe", "saturn", "saturnjp",
         "scummvm", "scv", "sega32x", "sega32xjp", "sega32xna", "segacd", "sg-1000",
         "solarus", "spectravideo", "steam", "stv", "supergrafx", "supervision", "supracan",
         "switch", "symbian", "tanodragon", "tg16", "ti99", "tic80", "to8", "trs-80",

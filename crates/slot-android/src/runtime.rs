@@ -126,6 +126,8 @@ enum Input {
 
 static INPUT: Mutex<VecDeque<Input>> = Mutex::new(VecDeque::new());
 static REQUEST: Mutex<Option<String>> = Mutex::new(None);
+/// A game for another app (a PSP game for PPSSPP): Android starts it.
+pub(crate) static HANDOFF: Mutex<Option<String>> = Mutex::new(None);
 // The core the requested cart boots on, as its platform resolves it: Android
 // names the save folder from it before the ROM is opened.
 static LAUNCH_CORE: Mutex<Option<(String, Core)>> = Mutex::new(None);
@@ -4443,6 +4445,15 @@ impl Engine {
                                 self.born.elapsed().as_millis() as u64));
                             return;
                         }
+                        // A launcher shelf's game (PSP): another app plays it.
+                        96 if !self.inserted && self.shelves[self.active].carts
+                            .get(self.shelves[self.active].index)
+                            .is_some_and(|cart| cart.platform.external()) => {
+                            let cart = &self.shelves[self.active].carts[self.shelves[self.active].index];
+                            let uri = cart.rom.to_string_lossy().into_owned();
+                            *HANDOFF.lock().unwrap_or_else(|e| e.into_inner()) = Some(uri);
+                            return;
+                        }
                         96 if !self.inserted && !self.shelves[self.active].carts.is_empty() => {
                             self.load_selected_emulation();
                             self.inserted = true;
@@ -5263,6 +5274,8 @@ impl Engine {
             (Platform::Snes|Platform::Md,true)=>&[120,124,90],
             (Platform::Psx | Platform::Tgcd,false)=>&[120,124],
             (Platform::Psx | Platform::Tgcd,true)=>&[120,124,90],
+            // PSP games play in PPSSPP: nothing of slot.'s to set.
+            (Platform::Psp,_)=>&[],
         }
     }
     fn screen_keys(platform: Platform)-> &'static [usize] {
@@ -5287,6 +5300,7 @@ impl Engine {
             (Platform::Psx,true)=>&[SCREEN_SIZE_KEY,70,72],
             (Platform::Tgcd,false)=>&[SCREEN_SIZE_KEY,73],
             (Platform::Tgcd,true)=>&[SCREEN_SIZE_KEY,73,75],
+            (Platform::Psp,_)=>&[],
         }
     }
     // Settings > Systems opens with the system's default core, then its
@@ -5366,6 +5380,7 @@ impl Engine {
             (Platform::Psx | Platform::Tgcd,true,_)=>&[124],
             (Platform::Psx | Platform::Tgcd,false,false)=>&[120,124],
             (Platform::Psx | Platform::Tgcd,false,true)=>&[120,124,90],
+            (Platform::Psp,_,_)=>&[],
         }
     }
     fn system_keys(platform: Platform)-> &'static [usize] {
@@ -5399,6 +5414,7 @@ impl Engine {
             (Platform::Tgcd,true,_)=>&[73],
             (Platform::Tgcd,false,false)=>&[SCREEN_SIZE_KEY,73],
             (Platform::Tgcd,false,true)=>&[SCREEN_SIZE_KEY,73,75],
+            (Platform::Psp,_,_)=>&[],
         }
     }
     fn core_key_platform(key:usize)->Option<Platform> {
@@ -8891,7 +8907,8 @@ mod settings_value_tests {
     fn each_system_page_is_titled_with_its_own_name() {
         // Reported on 2.0.0: NES showed "Screen Size", SNES "NES" and Mega
         // Drive "Super Nintendo".
-        for platform in Platform::ALL {
+        // The PSP shelf (PPSSPP) has no Systems page.
+        for platform in Platform::ALL.into_iter().filter(|p| !p.external()) {
             assert_eq!(MENU_TEXT[Engine::screen_title(platform)], platform.name(),
                 "Settings > Systems > {platform:?} heading");
         }

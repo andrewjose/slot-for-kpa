@@ -327,6 +327,7 @@ pub fn watomsk_fit(bezel: Bezel, platform: Platform, mode: VideoMode, panel: (u3
                 None
             }
         }
+        Platform::Psp => None,
     }
 }
 
@@ -341,6 +342,7 @@ pub fn bezel_offered(platform: Platform, panel: (u32, u32)) -> bool {
         // narrower ones (every home console has a band logo).
         Platform::Nes | Platform::Snes | Platform::Psx | Platform::Tgcd =>
             !(4.0 / 3.0 * 0.99..=4.0 / 3.0 * 1.01).contains(&a),
+        Platform::Psp => false,
     }
 }
 

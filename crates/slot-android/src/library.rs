@@ -70,7 +70,7 @@ pub fn next_populated(current: usize, direction: i32, count: &[usize]) -> usize 
 /// A cart's automatic shell, as the shelf gives it when Cart Studio names none.
 fn auto_shell(entry: &RomEntry, platform: Platform) -> Option<ShellChoice> {
     match platform {
-        Platform::Gba | Platform::Psx | Platform::Tgcd => None,
+        Platform::Gba | Platform::Psx | Platform::Tgcd | Platform::Psp => None,
         // The region's mould, a publisher's, and the game's colour.
         Platform::Nes | Platform::Snes | Platform::Md => slot_ui::home_shell(
             platform, entry.title.trim(), &entry.home_region, &entry.home_maker),
@@ -249,6 +249,7 @@ mod tests {
             entry("NES", "nes"), entry("SNES", "snes"), entry("MD", "md"),
             entry("PSX", "psx"),
             entry("TGCD", "tgcd"),
+            entry("PSP", "psp"),
         ]);
         assert_eq!(grouped.len(), slot_store::Platform::ALL.len());
         assert!(grouped.iter().all(|shelf| shelf.len() == 1));

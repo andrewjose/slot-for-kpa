@@ -36,7 +36,7 @@ impl HomeMould {
             Platform::Snes => Some(HomeMould::Snes),
             Platform::Md => Some(HomeMould::MegaDrive),
             // Discs come in a CD jewel case.
-            Platform::Psx | Platform::Tgcd => Some(HomeMould::JewelCase),
+            Platform::Psx | Platform::Tgcd | Platform::Psp => Some(HomeMould::JewelCase),
             Platform::Gba | Platform::Gb | Platform::Gbc => None,
         }
     }
@@ -141,7 +141,7 @@ pub fn home_shell(platform: Platform, stem: &str, region: &str, maker: &str) -> 
         Platform::Snes => HomeSystem::Snes,
         Platform::Md => HomeSystem::Md,
         // One plain shell for every disc: no regional or publisher shells.
-        Platform::Gba | Platform::Gb | Platform::Gbc | Platform::Psx | Platform::Tgcd => return None,
+        Platform::Gba | Platform::Gb | Platform::Gbc | Platform::Psx | Platform::Tgcd | Platform::Psp => return None,
     };
     let (mould, colour, glitter) = home_pick(system, stem, region, maker);
     let finish = if glitter { ShellFinish::Glitter } else { ShellFinish::Solid };

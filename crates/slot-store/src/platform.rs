@@ -16,12 +16,16 @@ pub enum Platform {
     Psx,
     /// TurboGrafx-CD / PC Engine CD-ROM: discs, like the PlayStation.
     Tgcd,
+    /// PSP: a launcher shelf. slot. shows the games and hands each one to
+    /// the PPSSPP app (Andrew, 2026-11-23: slot. as a launcher); no core.
+    Psp,
 }
 
 impl Platform {
-    pub const ALL: [Platform; 8] = [
+    pub const ALL: [Platform; 9] = [
         Platform::Gba, Platform::Gb, Platform::Gbc,
         Platform::Nes, Platform::Snes, Platform::Md, Platform::Psx, Platform::Tgcd,
+        Platform::Psp,
     ];
 
     pub fn name(self) -> &'static str {
@@ -34,6 +38,7 @@ impl Platform {
             Platform::Md => "Mega Drive",
             Platform::Psx => "PlayStation",
             Platform::Tgcd => "TurboGrafx-CD",
+            Platform::Psp => "PSP",
         }
     }
 
@@ -47,6 +52,7 @@ impl Platform {
             Platform::Md => "MD",
             Platform::Psx => "PSX",
             Platform::Tgcd => "TGCD",
+            Platform::Psp => "PSP",
         }
     }
 
@@ -67,6 +73,8 @@ impl Platform {
             Platform::Psx => &["chd", "pbp", "iso", "cue"],
             // A CHD or cue is either system's: the library folder tells (Android).
             Platform::Tgcd => &["chd", "cue"],
+            // In a PSP folder (Android): an ISO, CSO or CHD is a UMD there.
+            Platform::Psp => &["iso", "cso", "chd", "pbp"],
         }
     }
 
@@ -79,7 +87,13 @@ impl Platform {
     /// A disc system: the game stays in the library (hundreds of MB),
     /// the core reads it by path.
     pub fn disc(self) -> bool {
-        matches!(self, Platform::Psx | Platform::Tgcd)
+        matches!(self, Platform::Psx | Platform::Tgcd | Platform::Psp)
+    }
+
+    /// A launcher shelf: its games run in another app (PSP in PPSSPP),
+    /// not in slot.
+    pub fn external(self) -> bool {
+        self == Platform::Psp
     }
 
     /// The usual picture: for the home consoles, what the core shows most
@@ -93,6 +107,7 @@ impl Platform {
             Platform::Md => (320, 224),
             Platform::Psx => (320, 240),
             Platform::Tgcd => (256, 224),
+            Platform::Psp => (480, 272),
         }
     }
 

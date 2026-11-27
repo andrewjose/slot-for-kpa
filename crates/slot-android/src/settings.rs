@@ -268,6 +268,8 @@ impl Bezel {
     pub const PSX: [Bezel; 2] = [Bezel::None, Bezel::Psx];
     /// TurboGrafx-CD: the TurboGrafx-16 frame first, then the PC Engine.
     pub const TGCD: [Bezel; 3] = [Bezel::None, Bezel::Turbografx, Bezel::PcEngine];
+    /// PSP games play in PPSSPP: no bezel of slot.'s.
+    pub const PSP: [Bezel; 1] = [Bezel::None];
     pub fn list(platform: slot_store::Platform) -> &'static [Bezel] {
         use slot_store::Platform;
         match platform {
@@ -279,6 +281,7 @@ impl Bezel {
             Platform::Md => &Self::MD,
             Platform::Psx => &Self::PSX,
             Platform::Tgcd => &Self::TGCD,
+            Platform::Psp => &Self::PSP,
         }
     }
     pub fn step_in(self,list:&[Bezel],right:bool)->Self {
@@ -828,6 +831,8 @@ impl Settings {
             slot_store::Platform::Md=>self.shader_md,
             slot_store::Platform::Psx=>self.shader_psx,
             slot_store::Platform::Tgcd=>self.shader_tgcd,
+            // PSP games play in PPSSPP, with its own shaders.
+            slot_store::Platform::Psp=>Shader::Off,
         }
     }
     pub fn set_shader_for(&mut self,platform:slot_store::Platform,shader:Shader) {
@@ -840,6 +845,7 @@ impl Settings {
             slot_store::Platform::Md=>self.shader_md=shader,
             slot_store::Platform::Psx=>self.shader_psx=shader,
             slot_store::Platform::Tgcd=>self.shader_tgcd=shader,
+            slot_store::Platform::Psp=>{}
         }
     }
     /// The Shader row's key of a home console (47 NES, 48 SNES, 49 MD,
@@ -865,8 +871,10 @@ impl Settings {
     /// The Settings key of a system's Frame Blending row (60..=65, 71).
     pub fn blending_key(platform: slot_store::Platform) -> usize {
         use slot_store::Platform::*;
+        // PSP (in PPSSPP) has no Frame Blending row: it shares TG-CD's
+        // key, never shown for it.
         match platform { Gba => 60, Gbc => 61, Gb => 62, Nes => 63, Snes => 64, Md => 65, Psx => 71,
-            Tgcd => 74 }
+            Tgcd | Psp => 74 }
     }
 
     pub(crate) fn blending_mut(&mut self, platform: slot_store::Platform) -> &mut Blending {
@@ -874,7 +882,7 @@ impl Settings {
         match platform {
             Gba => &mut self.blending_gba, Gbc => &mut self.blending_gbc, Gb => &mut self.blending_gb,
             Nes => &mut self.blending_nes, Snes => &mut self.blending_snes, Md => &mut self.blending_md,
-            Psx => &mut self.blending_psx, Tgcd => &mut self.blending_tgcd,
+            Psx => &mut self.blending_psx, Tgcd | Psp => &mut self.blending_tgcd,
         }
     }
 
@@ -906,7 +914,7 @@ impl Settings {
         match platform {
             Gba => self.blending_gba, Gbc => self.blending_gbc, Gb => self.blending_gb,
             Nes => self.blending_nes, Snes => self.blending_snes, Md => self.blending_md,
-            Psx => self.blending_psx, Tgcd => self.blending_tgcd,
+            Psx => self.blending_psx, Tgcd => self.blending_tgcd, Psp => Blending::Off,
         }
     }
 
@@ -934,6 +942,7 @@ impl Settings {
             slot_store::Platform::Md=>self.bezel_md,
             slot_store::Platform::Psx=>self.bezel_psx,
             slot_store::Platform::Tgcd=>self.bezel_tgcd,
+            slot_store::Platform::Psp=>Bezel::None,
         }
     }
     pub fn set_bezel_for(&mut self,platform:slot_store::Platform,value:Bezel) {
@@ -946,6 +955,7 @@ impl Settings {
             slot_store::Platform::Md=>self.bezel_md=value,
             slot_store::Platform::Psx=>self.bezel_psx=value,
             slot_store::Platform::Tgcd=>self.bezel_tgcd=value,
+            slot_store::Platform::Psp=>{}
         }
     }
     /// Whether Black Frame Insertion is on for this system.
@@ -973,7 +983,7 @@ impl Settings {
             slot_store::Platform::Gb=>27, slot_store::Platform::Nes=>44,
             slot_store::Platform::Snes=>45, slot_store::Platform::Md=>46,
             slot_store::Platform::Psx=>72,
-            slot_store::Platform::Tgcd=>75,
+            slot_store::Platform::Tgcd | slot_store::Platform::Psp=>75,
         }
     }
     fn step_bezel(&mut self,platform:slot_store::Platform,right:bool) {

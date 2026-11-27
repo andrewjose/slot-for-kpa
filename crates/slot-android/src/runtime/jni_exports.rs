@@ -736,6 +736,17 @@ pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativePollLaunchUri(
     }
 }
 
+/// A game to hand to another app (a PSP game's document URI), once.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativePollHandoff(
+    env: JNIEnv<'_>, _this: JObject<'_>,
+) -> jstring {
+    let next = HANDOFF.lock().unwrap_or_else(|e| e.into_inner()).take();
+    match next.and_then(|v| env.new_string(v).ok()) {
+        Some(v) => v.into_raw(), None => std::ptr::null_mut(),
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeGameReady(
     mut env: JNIEnv<'_>, _this: JObject<'_>, uri: JString<'_>, path: JString<'_>,

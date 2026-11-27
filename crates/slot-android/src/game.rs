@@ -793,6 +793,8 @@ impl GameSession {
             // System Card 3 (syscard3.pce) from the BIOS folder: the core's
             // default, and what most CD games need.
             Core::MednafenPceFast => {}
+            // Never loaded: PSP games are handed to the PPSSPP app.
+            Core::Ppsspp => return Err("PSP games play in PPSSPP".into()),
         }
         // rcheevos shares ONE evaluator, protected against cross-console
         // memory reads. GB=4 / GBA=5 / GBC=6 use their own libretro maps.
@@ -801,7 +803,7 @@ impl GameSession {
             Platform::Gb => Some(4), Platform::Gba => Some(5), Platform::Gbc => Some(6),
             Platform::Nes => Some(7), Platform::Snes => Some(3), Platform::Md => Some(1),
             // rcheevos hashes a disc by reading its tracks: not wired up.
-            Platform::Psx | Platform::Tgcd => None,
+            Platform::Psx | Platform::Tgcd | Platform::Psp => None,
         };
         // Where a multi-disc game remembers the disc in the drive.
         let disc_memory = (platform.disc() && linked_boot.is_none())

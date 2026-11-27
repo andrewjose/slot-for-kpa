@@ -21,14 +21,29 @@ pub enum Core {
     PcsxRearmed,
     /// Beetle PCE Fast, the TurboGrafx-CD's (System Card BIOS needed).
     MednafenPceFast,
+    /// Not a libretro core: the PPSSPP app, which a PSP game is handed to.
+    Ppsspp,
 }
 
 impl Core {
-    pub const ALL: [Core; 11] = [
+    pub const ALL: [Core; 12] = [
+        Core::Mgba, Core::Gpsp, Core::Gambatte,
+        Core::Fceumm, Core::Nestopia, Core::Snes9x, Core::Bsnes,
+        Core::GenesisPlusGx, Core::Picodrive, Core::PcsxRearmed, Core::MednafenPceFast,
+        Core::Ppsspp,
+    ];
+
+    /// The libretro cores slot. ships (lib{as_str}_libretro.so).
+    pub const LIBRETRO: [Core; 11] = [
         Core::Mgba, Core::Gpsp, Core::Gambatte,
         Core::Fceumm, Core::Nestopia, Core::Snes9x, Core::Bsnes,
         Core::GenesisPlusGx, Core::Picodrive, Core::PcsxRearmed, Core::MednafenPceFast,
     ];
+
+    /// Another app, not a core slot. runs.
+    pub fn external(self) -> bool {
+        self == Core::Ppsspp
+    }
 
     /// libretro's own core name: lib{as_str}_libretro.so, and the key
     /// written to the ini files.
@@ -45,6 +60,7 @@ impl Core {
             Core::Picodrive => "picodrive",
             Core::PcsxRearmed => "pcsx_rearmed",
             Core::MednafenPceFast => "mednafen_pce_fast",
+            Core::Ppsspp => "ppsspp",
         }
     }
 
@@ -74,6 +90,7 @@ impl Core {
             Core::Picodrive => "PicoDrive",
             Core::PcsxRearmed => "PCSX-ReARMed",
             Core::MednafenPceFast => "Beetle PCE Fast",
+            Core::Ppsspp => "PPSSPP",
         }
     }
 
@@ -95,6 +112,7 @@ impl Core {
             Platform::Md => Core::GenesisPlusGx,
             Platform::Psx => Core::PcsxRearmed,
             Platform::Tgcd => Core::MednafenPceFast,
+            Platform::Psp => Core::Ppsspp,
         }
     }
 
@@ -110,6 +128,7 @@ impl Core {
             Platform::Md => Core::Picodrive,
             Platform::Psx => Core::PcsxRearmed,
             Platform::Tgcd => Core::MednafenPceFast,
+            Platform::Psp => Core::Ppsspp,
         }
     }
 
@@ -117,7 +136,7 @@ impl Core {
     pub fn socket(self) -> usize {
         match self {
             Core::Mgba | Core::Fceumm | Core::Snes9x | Core::GenesisPlusGx | Core::PcsxRearmed
-            | Core::MednafenPceFast => 0,
+            | Core::MednafenPceFast | Core::Ppsspp => 0,
             Core::Gpsp | Core::Gambatte | Core::Nestopia | Core::Bsnes | Core::Picodrive => 1,
         }
     }
@@ -164,6 +183,7 @@ fn default_key(platform: Platform) -> &'static str {
         Platform::Md => "md",
         Platform::Psx => "psx",
         Platform::Tgcd => "tgcd",
+        Platform::Psp => "psp",
     }
 }
 

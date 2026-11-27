@@ -24,6 +24,10 @@
         <package android:name="com.github.catfriend1.syncthingandroid" />
         <package android:name="com.github.catfriend1.syncthingandroid.debug" />
         <provider android:authorities="com.raofflineproxy.config" />
+        <!-- The PSP shelf hands its games to PPSSPP (PspHandoff). -->
+        <package android:name="org.ppsspp.ppsspplegacy" />
+        <package android:name="org.ppsspp.ppssppgold" />
+        <package android:name="org.ppsspp.ppsspp" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

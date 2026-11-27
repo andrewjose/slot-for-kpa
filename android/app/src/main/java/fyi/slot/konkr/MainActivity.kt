@@ -144,6 +144,7 @@ class MainActivity : Activity() {
     external fun nativeConfigure(dataDir: String, libraryDir: String,
         isRetroidPocketClassic: Boolean)
     external fun nativePollLaunchUri(): String?
+    external fun nativePollHandoff(): String?
     external fun nativeGameReady(uri: String, path: String)
     external fun nativeGameError(uri: String, message: String)
     external fun nativeExitGame()
@@ -737,6 +738,12 @@ class MainActivity : Activity() {
                 stopAudio()
             }
             drainPendingSaveFlush()
+            nativePollHandoff()?.let { uri ->
+                if (!PspHandoff.launch(this@MainActivity, Uri.parse(uri))) {
+                    SlotToast.makeText(this@MainActivity,
+                        "Install PPSSPP to play PSP games.", Toast.LENGTH_LONG).show()
+                }
+            }
             val request = nativePollLaunchUri()
             if (request != null) {
                 raLaunchPending = true
@@ -3849,7 +3856,8 @@ class MainActivity : Activity() {
                 progress?.let { report -> { done: Int, total: Int ->
                     report(offset + done, if (total == 0) 0 else offset + total)
                 } }, { platform, colorOnly -> RomFolders.shelve(root, platform, colorOnly, own) },
-                tgcdTree = root.system == RomFolders.System.TGCD, keepPrevious = false)
+                tgcdTree = root.system == RomFolders.System.TGCD, keepPrevious = false,
+                pspTree = root.system == RomFolders.System.PSP)
             truncated = truncated || part.truncated
             parts.add(part.json)
             before += part.count

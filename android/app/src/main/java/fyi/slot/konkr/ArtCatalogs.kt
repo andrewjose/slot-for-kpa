@@ -43,6 +43,7 @@ internal object ArtCatalogs {
     val thumbRepos = mapOf(
         Systems.PSX to "Sony_-_PlayStation",
         Systems.TGCD to "NEC_-_PC_Engine_CD_-_TurboGrafx-CD",
+        Systems.PSP to "Sony_-_PlayStation_Portable",
     )
 
     private val parsed = HashMap<String, List<ArtGuess.Known>>()
