@@ -548,7 +548,7 @@ enum LcdFrom {
     Pause { row: usize },
 }
 
-const MENU_TEXT: [&str; 150] = [
+const MENU_TEXT: [&str; 151] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -699,6 +699,7 @@ const MENU_TEXT: [&str; 150] = [
     "PS1 Memory Card 1",                  // 147
     "PS1 Memory Card 2",                  // 148
     "Curvature",                          // 149
+    "Redo All Labels",                    // 150
 ];
 /// MENU_TEXT's Sensitivity row (tilt and gyro games).
 const SENSITIVITY_TEXT: usize = 143;
@@ -795,6 +796,9 @@ const SETTING_VALUE_NAMES: [&str; 150] = ["2×", "3×", "4×", "6×", "ON", "OFF
                                "INTEGER (NO CROP)", "4:3"];
 /// SETTING_VALUE_NAMES' Integer (No Crop), then 4:3.
 const SCREEN_FIT_VALUE: usize = 148;
+/// Library's rows (MENU_TEXT): ROM, BIOS, save and state folders, Share
+/// Saves, Refresh Library, Redo All Labels.
+const LIBRARY_ROWS: [usize; 7] = [6, 24, 7, 8, 79, 9, 150];
 /// SETTING_VALUE_NAMES' first Curvature value: Light, Medium, Strong.
 const CURVE_VALUE: usize = 145;
 /// The Curvature row (MENU_TEXT) and its setting key.
@@ -4204,7 +4208,8 @@ impl Engine {
                             },
                             ShelfOverlay::Library { row } => match code {
                                 19 | 20 => {
-                                    let next = if code == 19 { (row + 5) % 6 } else { (row + 1) % 6 };
+                                    let n = LIBRARY_ROWS.len();
+                                    let next = if code == 19 { (row + n - 1) % n } else { (row + 1) % n };
                                     self.overlay = ShelfOverlay::Library { row: next };
                                 }
                                 // Identical left/right + A toggle to Settings.
@@ -4213,16 +4218,18 @@ impl Engine {
                                     UI_ACTION.lock().unwrap_or_else(|e| e.into_inner())
                                         .push_back(17);
                                 }
-                                96 => if let 0..=5 = row {
+                                96 => if row < LIBRARY_ROWS.len() {
                                     // ROM, BIOS, SRAM root, State root,
-                                    // Share Saves OFF/ON, Refresh.
+                                    // Share Saves OFF/ON, Refresh, Redo All
+                                    // Labels (Android asks about his picks).
                                     let action = match row {
                                         0 => 1,
                                         1 => 4,
                                         2 => 5,
                                         3 => 6,
                                         4 => 17,
-                                        _ => 2,
+                                        5 => 2,
+                                        _ => 50,
                                     };
                                     UI_ACTION.lock().unwrap_or_else(|e| e.into_inner())
                                         .push_back(action);
@@ -5164,7 +5171,7 @@ impl Engine {
     fn menu_cursor(&self) -> (u8, usize, usize) {
         match self.overlay {
             ShelfOverlay::Menu { row } => (1u8, row, 6usize),
-            ShelfOverlay::Library { row } => (2u8, row, 6usize),
+            ShelfOverlay::Library { row } => (2u8, row, LIBRARY_ROWS.len()),
             ShelfOverlay::GameMenu { row } => (3u8, row, pause_rows(
                 self.game.as_ref().is_some_and(GameSession::linked),
                 self.game.as_ref().is_some_and(GameSession::requires_relaunch)).len()),
@@ -6422,7 +6429,10 @@ impl Engine {
     fn draw_library_share_value(&self, row: usize, out: &mut Vec<Draw>) {
         let which = if SHARE_SAVES_ENABLED.load(Ordering::Acquire) { 4 } else { 5 };
         let (tex, width, height) = self.setting_values[which];
-        let y = settings_row_top(6) + 4.0 * QUICK_PITCH + 8.0;
+        // Row 4 of a page that scrolls by one once Redo All Labels (row 6)
+        // is selected.
+        let offset = crate::controls::scroll_offset(row, LIBRARY_ROWS.len());
+        let y = settings_row_top(6) + (4 - offset) as f32 * QUICK_PITCH + 8.0;
         let scale = 0.79f32;
         let w = width as f32 * scale;
         let right = out_w() as f32 - 34.0;
@@ -6979,7 +6989,7 @@ impl Engine {
                 }
             }
             ShelfOverlay::Library { row } => {
-                self.draw_original_style_menu(5, &[6, 24, 7, 8, 79, 9], row, out);
+                self.draw_original_style_menu(5, &LIBRARY_ROWS, row, out);
                 self.draw_library_share_value(row, out);
             }
             ShelfOverlay::Settings { row } => {

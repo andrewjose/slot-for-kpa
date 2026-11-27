@@ -886,6 +886,10 @@ impl Engine {
             if let Err(error) = slot_store::atomic_write(&root.join("Labels").join(format!("{key}.png")), png) {
                 set_error_message("Couldn't save the label.", &error);
                 ok = false;
+            } else {
+                // His own pick: Library > Redo All Labels can keep it
+                // (CartLabelReset.kt).
+                let _ = std::fs::write(root.join("Labels").join(format!("{key}.picked")), b"");
             }
         }
         if let Some(on) = outcome.name_band {

@@ -29,6 +29,12 @@ internal class AutoLabelRetryPolicy {
         deferred.remove(key)
     }
 
+    /** Redo All Labels: every cart is tried again. */
+    fun forgetAll() {
+        complete.clear()
+        deferred.clear()
+    }
+
     /** A successful index fetch resets its temporary outage counter. */
     fun reset(key: String) {
         complete.remove(key)

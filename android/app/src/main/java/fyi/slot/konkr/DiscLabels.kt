@@ -42,6 +42,9 @@ internal object DiscLabels {
 
     private val retry = AutoLabelRetryPolicy()
 
+    /** Redo All Labels: this session's finished and failed carts are tried again. */
+    fun forgetTries() = retry.forgetAll()
+
     internal data class Disc(
         val uri: String, val platform: String, val title: String, val filename: String,
         val size: Long, val modified: Long,

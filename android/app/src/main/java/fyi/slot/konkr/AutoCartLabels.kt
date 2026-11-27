@@ -38,6 +38,9 @@ internal object AutoCartLabels {
     // Only the serial artwork worker mutates this session state. Official
     // negatives never retry; transient failures retry at most four times.
     private val retry = AutoLabelRetryPolicy()
+
+    /** Redo All Labels: this session's finished and failed carts are tried again. */
+    fun forgetTries() = retry.forgetAll()
     private const val INDEX_KEY = "@official-art-index"
     private var savedTotal = 0
     @Volatile private var batchDelayMs = NEXT_BATCH_MS

@@ -48,6 +48,9 @@ internal object HomeCartLabels {
     private const val LABEL_MAX = 960
 
     private val retry = AutoLabelRetryPolicy()
+
+    /** Redo All Labels: this session's finished and failed carts are tried again. */
+    fun forgetTries() = retry.forgetAll()
     /** Set when ScreenScraper refuses slot.'s credentials or closes its API. */
     @Volatile private var closedUntil = 0L
 

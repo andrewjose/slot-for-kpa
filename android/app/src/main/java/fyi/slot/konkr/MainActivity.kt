@@ -797,6 +797,7 @@ open class MainActivity : Activity() {
                 18 -> showPeerCartridgeConsent()
                 23 -> shareLinkCode()
                 40 -> saveScreenshot()
+                50 -> askRedoAllLabels()
                 41, 42, 43 -> {
                     applyOrientation(SlotOrientation.fromAction(action))
                     // Next launch starts this way up from its first frame.
@@ -3269,6 +3270,48 @@ open class MainActivity : Activity() {
         }
     }
 
+    /** Library > Redo All Labels: keep the labels he picked, or not. */
+    private fun askRedoAllLabels() {
+        val picks = CartLabelReset.pickedCount(filesDir)
+        val message = (if (picks > 0) "You picked $picks label${if (picks == 1) "" else "s"} yourself."
+            else "No labels you picked are on record yet.") +
+            " Every other label is fetched again." +
+            "\n\nLabels picked before this update can't be told apart, so they are redone too."
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Redo All Labels")
+            .setMessage(message)
+            .setPositiveButton("Keep My Picks") { _, _ -> redoAllLabels(keepPicks = true) }
+            .setNegativeButton("Redo Everything") { _, _ -> redoAllLabels(keepPicks = false) }
+            .setNeutralButton("Cancel", null)
+            .show()
+    }
+
+    private fun redoAllLabels(keepPicks: Boolean) {
+        // On the label worker: never under a pass that is writing labels.
+        autoLabelsWorker.execute {
+            val result = try {
+                // This session's finished and failed carts are tried again.
+                AutoCartLabels.forgetTries()
+                HomeCartLabels.forgetTries()
+                DiscLabels.forgetTries()
+                CartLabelReset.reset(filesDir, keepPicks)
+            } catch (error: Exception) {
+                Log.e(TAG, "Redo All Labels failed", error); null
+            }
+            uiHandler.post {
+                if (result == null) {
+                    SlotToast.makeText(this, "Couldn't redo the labels.", Toast.LENGTH_LONG).show()
+                    return@post
+                }
+                result.uris.forEach(::nativeReloadCartLabel)
+                SlotToast.makeText(this, "Redoing ${result.removed} labels" +
+                    (if (result.kept > 0) ", keeping your ${result.kept}." else "."),
+                    Toast.LENGTH_LONG).show()
+                startAutoCartLabels()
+            }
+        }
+    }
+
     private fun cartLabelFile(romUri: String): File =
         CartLabelPaths.file(filesDir, romUri)
 
@@ -3427,6 +3470,7 @@ open class MainActivity : Activity() {
             SlotToast.makeText(this, "Couldn't remove this label.", Toast.LENGTH_LONG).show()
             return
         }
+        CartLabelReset.pickedMarker(file).delete()
         nativeReloadCartLabel(selected)
         SlotToast.makeText(this, "Custom label removed.", Toast.LENGTH_SHORT).show()
     }
@@ -3468,6 +3512,8 @@ open class MainActivity : Activity() {
                 atomic.failWrite(output)
                 throw error
             }
+            // His own pick: Redo All Labels can keep it.
+            CartLabelReset.pickedMarker(target).writeBytes(ByteArray(0))
             nativeReloadCartLabel(romUri)
             SlotToast.makeText(this, "Label updated.", Toast.LENGTH_SHORT).show()
         } catch (error: Exception) {

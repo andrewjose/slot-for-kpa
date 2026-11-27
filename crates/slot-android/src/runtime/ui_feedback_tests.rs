@@ -890,3 +890,20 @@ fn settings_pages_place_the_bar_by_their_own_row_count() {
     assert_eq!(EMULATION_ROWS.len(), EMULATION_KEYS.len());
     assert_eq!(INTERFACE_ROWS.len(), INTERFACE_KEYS.len());
 }
+
+#[test]
+fn library_redo_all_labels_asks_android() {
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    assert_eq!(MENU_TEXT[*LIBRARY_ROWS.last().unwrap()], "Redo All Labels");
+    engine.overlay = ShelfOverlay::Library { row: 5 };
+    engine.handle(Input::Key(20, true));
+    engine.handle(Input::Key(20, false));
+    assert_eq!(engine.overlay, ShelfOverlay::Library { row: 6 });
+    assert_eq!(engine.menu_cursor(), (2, 6, LIBRARY_ROWS.len()));
+    UI_ACTION.lock().unwrap().clear();
+    engine.handle(Input::Key(96, true));
+    engine.handle(Input::Key(96, false));
+    assert!(UI_ACTION.lock().unwrap().contains(&50), "Android asks: keep his picks or not");
+    assert_eq!(engine.overlay, ShelfOverlay::None);
+}
