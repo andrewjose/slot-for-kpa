@@ -26,6 +26,7 @@ impl HomeMould {
             HomeMould::Snes | HomeMould::SnesUs => Platform::Snes,
             HomeMould::MegaDrive | HomeMould::MegaDriveJp | HomeMould::MegaDriveEa => Platform::Md,
             HomeMould::JewelCase => Platform::Psx,
+            HomeMould::Umd => Platform::Psp,
         }
     }
 
@@ -36,7 +37,9 @@ impl HomeMould {
             Platform::Snes => Some(HomeMould::Snes),
             Platform::Md => Some(HomeMould::MegaDrive),
             // Discs come in a CD jewel case.
-            Platform::Psx | Platform::Tgcd | Platform::Psp => Some(HomeMould::JewelCase),
+            Platform::Psx | Platform::Tgcd => Some(HomeMould::JewelCase),
+            // PSP games come in a tall UMD case, the cover shown whole.
+            Platform::Psp => Some(HomeMould::Umd),
             Platform::Gba | Platform::Gb | Platform::Gbc => None,
         }
     }
@@ -53,6 +56,7 @@ impl HomeMould {
             HomeMould::MegaDriveJp => Outline::MegaDriveJp,
             HomeMould::MegaDriveEa => Outline::MegaDriveEa,
             HomeMould::JewelCase => Outline::JewelCase,
+            HomeMould::Umd => Outline::Umd,
         }
     }
 
@@ -68,8 +72,9 @@ pub fn home_mould_of(cart: &Cart) -> Option<HomeMould> {
     Some(
         cart.shell
             .and_then(|choice| HomeMould::of_outline(choice.outline))
-            // The case is the PlayStation's and the TurboGrafx-CD's.
-            .filter(|m| m.platform() == cart.platform || default == HomeMould::JewelCase && *m == default)
+            // Any disc may sit in either disc case (a jewel case for a PSP
+            // game, a UMD case for a PlayStation one).
+            .filter(|m| m.platform() == cart.platform || m.system() == HomeSystem::Disc && default.system() == HomeSystem::Disc)
             .unwrap_or(default),
     )
 }
@@ -212,8 +217,21 @@ mod tests {
         for m in HomeMould::ALL {
             assert_eq!(m.name(), m.outline().name(), "{m:?}");
             assert_eq!(HomeMould::of_name(m.name()), Some(m));
-            assert_eq!(HomeMould::default_for(m.platform()), Some(HomeMould::default_of(m.system())));
+            // Each disc case is its own system's: the jewel case the
+            // PlayStation's, the UMD case the PSP's.
+            let default = if m.system() == HomeSystem::Disc { m } else { HomeMould::default_of(m.system()) };
+            assert_eq!(HomeMould::default_for(m.platform()), Some(default));
         }
+    }
+
+    #[test]
+    fn psp_games_come_in_a_umd_case_and_may_wear_a_jewel_case() {
+        assert_eq!(HomeMould::default_for(Platform::Psp), Some(HomeMould::Umd));
+        assert_eq!(HomeMould::default_for(Platform::Psx), Some(HomeMould::JewelCase));
+        // The case is shown as tall as a jewel case, the cover whole.
+        let (_, _, lw, lh) = HomeMould::Umd.art().label;
+        assert!((lw as f32 / lh as f32 - 0.565).abs() < 0.02);
+        assert_eq!(slot_store::Outline::parse("umd"), Some(slot_store::Outline::Umd));
     }
 
     #[test]

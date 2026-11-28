@@ -854,6 +854,28 @@ impl Settings {
             }
         }
     }
+    /// Settings > Reset to Fresh Install: the fresh-install set, as a new
+    /// install starts. The screen's orientation is kept (a portrait device
+    /// stays upright), and so is his own wallpaper as the one shown. Every
+    /// system's default core and Screen Size go back to unset, then the
+    /// Game Boys' are seeded again. Per-game choices, saves, states, labels
+    /// and folders are not settings and stay.
+    pub fn reset_to_fresh_install(dir: &Path, device: Device, keep: &Self) -> io::Result<Self> {
+        let mut fresh = Self::first_install_defaults_for_device(device);
+        fresh.orientation = keep.orientation;
+        if dir.join("Wallpapers/user.png").is_file() {
+            fresh.wallpaper = WallpaperPick::File("user.png".into());
+        }
+        for platform in slot_store::Platform::ALL {
+            slot_store::ini::write_entry(dir, slot_store::DEFAULT_CORE_FILE,
+                slot_store::default_key(platform), None)?;
+            slot_store::ini::write_entry(dir, crate::video_mode::VIDEO_MODE_FILE,
+                &crate::video_mode::system_key(platform), None)?;
+        }
+        Self::seed_fresh_install(dir);
+        fresh.save(dir)?;
+        Ok(fresh)
+    }
     pub fn load(dir: &Path) -> Self {
         Self::load_for_device(dir, Device::KONKR)
     }
@@ -1454,6 +1476,36 @@ mod tests {
         assert!(!s.show_fps);
         assert!(!s.responsive_loop);
         assert_eq!(s.run_ahead_frames,1);
+    }
+    #[test]
+    fn reset_to_fresh_install_starts_over_but_keeps_the_orientation() {
+        use slot_store::Platform;
+        let root=std::env::temp_dir().join(format!("slot-reset-fresh-{}", std::process::id()));
+        let _=fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let mut mine=Settings::first_install_defaults();
+        mine.run_ahead_frames=0;
+        mine.shader_gba=Shader::Off;
+        mine.clock_on_top=true;
+        let upright=mine.orientation;
+        mine.save(&root).unwrap();
+        slot_store::write_default_core(&root, Platform::Gbc, slot_store::Core::Mgba).unwrap();
+        slot_store::write_default_core(&root, Platform::Nes, slot_store::Core::Nestopia).unwrap();
+        crate::video_mode::write_system_mode(&root, Platform::Gb,
+            crate::video_mode::VideoMode::Stretch).unwrap();
+        let fresh=Settings::reset_to_fresh_install(&root, Device::KONKR, &mine).unwrap();
+        assert_eq!(fresh.run_ahead_frames,1);
+        assert_eq!(fresh.shader_gba,Shader::LcdGridV2Gba);
+        assert!(!fresh.clock_on_top);
+        assert_eq!(fresh.orientation,upright);
+        // Saved: the restart loads the same.
+        assert_eq!(Settings::load_for_device(&root, Device::KONKR).run_ahead_frames,1);
+        assert_eq!(slot_store::default_core(&root, Platform::Gbc), slot_store::Core::Gambatte);
+        assert_eq!(slot_store::ini::value(&root, slot_store::DEFAULT_CORE_FILE,
+            slot_store::default_key(Platform::Nes)), None);
+        assert_eq!(crate::video_mode::system_mode(&root, Platform::Gb, (960, 640)),
+            crate::video_mode::VideoMode::Actual);
+        let _=fs::remove_dir_all(&root);
     }
     #[test]
     fn a_fresh_install_seeds_gambatte_and_integer_for_the_game_boys() {

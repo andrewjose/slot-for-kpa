@@ -31,6 +31,8 @@ pub enum HomeMould {
     MegaDriveJp,
     MegaDriveEa,
     JewelCase,
+    /// A PSP game's tall UMD keep case.
+    Umd,
 }
 
 /// A mould's art and where things sit on it, in its logical pixels.
@@ -77,7 +79,7 @@ macro_rules! art {
 }
 
 // Printed by nes-megadrive/export_app.py.
-static ARTS: [MouldArt; 10] = [
+static ARTS: [MouldArt; 11] = [
     art!("nes", 352, (126, 0, 145, 239),
         [(40.6, 234.6, 101.0, 46.5), (170.4, 234.6, 101.0, 46.5)],
         (166.3, 103.6, 121.6, 39.5), [126, 126, 128], None),
@@ -111,11 +113,16 @@ static ARTS: [MouldArt; 10] = [
     art!("jewelcase", 276, (36, 8, 260, 260),
         [(87.0, 196.0, 150.0, 34.0), (87.0, 196.0, 150.0, 34.0)],
         (91.0, 52.0, 130.0, 30.0), [24, 24, 26], None),
+    // Drawn by tools/home-art/umd.py: the cover whole in the tall insert
+    // well; opened, the UMD in its caddy with the core's name on a sticker.
+    art!("umd", 540, (22, 22, 280, 496),
+        [(81.0, 236.0, 150.0, 34.0), (81.0, 236.0, 150.0, 34.0)],
+        (91.0, 60.0, 130.0, 30.0), [24, 24, 26], None),
 ];
 
 
 impl HomeMould {
-    pub const ALL: [HomeMould; 10] = [
+    pub const ALL: [HomeMould; 11] = [
         HomeMould::Nes,
         HomeMould::Famicom,
         HomeMould::FamicomNamco,
@@ -126,6 +133,7 @@ impl HomeMould {
         HomeMould::MegaDriveJp,
         HomeMould::MegaDriveEa,
         HomeMould::JewelCase,
+        HomeMould::Umd,
     ];
 
     pub fn index(self) -> usize {
@@ -147,7 +155,7 @@ impl HomeMould {
             }
             HomeMould::Snes | HomeMould::SnesUs => HomeSystem::Snes,
             HomeMould::MegaDrive | HomeMould::MegaDriveJp | HomeMould::MegaDriveEa => HomeSystem::Md,
-            HomeMould::JewelCase => HomeSystem::Disc,
+            HomeMould::JewelCase | HomeMould::Umd => HomeSystem::Disc,
         }
     }
 
@@ -174,6 +182,7 @@ impl HomeMould {
             HomeMould::MegaDriveJp => "megadrive-jp",
             HomeMould::MegaDriveEa => "megadrive-ea",
             HomeMould::JewelCase => "jewelcase",
+            HomeMould::Umd => "umd",
         }
     }
 

@@ -307,7 +307,7 @@ pub fn home_slot_family(cart: &slot_store::Cart) -> Option<usize> {
         M::Nes => 1,
         M::Snes | M::SnesUs => 2,
         // A disc case goes into the Mega Drive's wide slot: the same width.
-        M::MegaDrive | M::MegaDriveJp | M::MegaDriveEa | M::JewelCase => 3,
+        M::MegaDrive | M::MegaDriveJp | M::MegaDriveEa | M::JewelCase | M::Umd => 3,
     })
 }
 

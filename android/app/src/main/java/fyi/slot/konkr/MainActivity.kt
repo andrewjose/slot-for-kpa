@@ -178,6 +178,7 @@ open class MainActivity : Activity() {
     external fun nativeRaStopReady(): Boolean
     external fun nativeSystemStatus(clock: String, batteryPercent: Int, charging: Boolean)
     external fun nativePollUiAction(): Int
+    external fun nativeResetSettings()
     external fun nativeTakeScreenshot(): ByteArray?
     external fun nativeUpdateStatus(status: Int, installed: String, available: String, automatic: Boolean)
     external fun nativeReloadVisualAssets()
@@ -798,6 +799,8 @@ open class MainActivity : Activity() {
                 23 -> shareLinkCode()
                 40 -> saveScreenshot()
                 50 -> askRedoAllLabels()
+                51 -> askResetSettings()
+                52 -> restartSlot()
                 41, 42, 43 -> {
                     applyOrientation(SlotOrientation.fromAction(action))
                     // Next launch starts this way up from its first frame.
@@ -3268,6 +3271,32 @@ open class MainActivity : Activity() {
             SlotToast.makeText(this, error.message?.takeIf { it.startsWith("Wallpaper must") }
                 ?: "Couldn't import this file.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** Settings > Reset to Fresh Install: ask, then the native side resets and asks for a restart (52). */
+    private fun askResetSettings() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Reset to Fresh Install")
+            .setMessage("Every setting goes back to how a fresh install starts: wallpaper, " +
+                "shaders, bezels, Run-Ahead, the status bar, each system's default core and " +
+                "Screen Size.\n\nYour games, saves, save states, labels, folders and " +
+                "per-game choices stay. slot. restarts to apply it.")
+            .setPositiveButton("Reset") { _, _ -> nativeResetSettings() }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Starts slot. again from its launcher, so the fresh settings load as on a first start. */
+    private fun restartSlot() {
+        val launch = packageManager.getLaunchIntentForPackage(packageName)?.component
+        if (launch == null) {
+            SlotToast.makeText(this, "Settings reset. Restart slot. to apply them.",
+                Toast.LENGTH_LONG).show()
+            return
+        }
+        startActivity(Intent.makeRestartActivityTask(launch))
+        finishAffinity()
+        Runtime.getRuntime().exit(0)
     }
 
     /** Library > Redo All Labels: keep the labels he picked, or not. */

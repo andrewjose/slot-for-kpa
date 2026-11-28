@@ -204,10 +204,16 @@ pub fn shelf_grow(body: Body) -> f32 {
     }
 }
 
+/// A jewel case's height (276 at 1.2x) over the UMD case's (540).
+const UMD_GROW: f32 = 1.2 * 276.0 / 540.0;
+
 /// How much larger a cart is drawn once seated: SNES and Mega Drive carts,
 /// EA's included, fill their slot's recess, which is drawn to fit them.
 fn seat_grow(body: Body) -> f32 {
     match body {
+        // The tall UMD case stands as tall as a jewel case, on the shelf
+        // and in the slot.
+        Body::Home(HomeMould::Umd) => UMD_GROW,
         Body::Home(m) if m.system() != home::HomeSystem::Nes => 1.2,
         _ => 1.0,
     }

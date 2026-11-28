@@ -189,6 +189,15 @@ pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeReloadCartLabel(
     }
 }
 
+/// Settings > Reset to Fresh Install, after Android's confirmation.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeResetSettings(
+    _env: *mut c_void,
+    _activity: *mut c_void,
+) {
+    INPUT.lock().unwrap_or_else(|e| e.into_inner()).push_back(Input::ResetSettings);
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_fyi_slot_konkr_MainActivity_nativeReloadVisualAssets(
     _env: *mut c_void,

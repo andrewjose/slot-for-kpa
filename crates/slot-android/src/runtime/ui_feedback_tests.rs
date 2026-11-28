@@ -907,3 +907,20 @@ fn library_redo_all_labels_asks_android() {
     assert!(UI_ACTION.lock().unwrap().contains(&50), "Android asks: keep his picks or not");
     assert_eq!(engine.overlay, ShelfOverlay::None);
 }
+
+#[test]
+fn settings_reset_to_fresh_install_asks_android() {
+    let _surface = slot_gfx::TestEgl::new();
+    let mut engine = Engine::new(0, None).unwrap();
+    assert_eq!(MENU_TEXT[*SETTINGS_ROWS.last().unwrap()], "Reset to Fresh Install");
+    engine.overlay = ShelfOverlay::Settings { row: 5 };
+    engine.handle(Input::Key(20, true));
+    engine.handle(Input::Key(20, false));
+    assert_eq!(engine.overlay, ShelfOverlay::Settings { row: 6 });
+    assert_eq!(engine.menu_cursor(), (4, 6, SETTINGS_ROWS.len()));
+    UI_ACTION.lock().unwrap().clear();
+    engine.handle(Input::Key(96, true));
+    engine.handle(Input::Key(96, false));
+    assert!(UI_ACTION.lock().unwrap().contains(&51), "Android asks before resetting");
+    assert_eq!(engine.overlay, ShelfOverlay::None);
+}

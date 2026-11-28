@@ -110,6 +110,8 @@ enum Input {
     Suspend,
     ReloadVisuals,
     ReloadCartLabel { uri: String },
+    /// Settings > Reset to Fresh Install, confirmed: then slot. restarts.
+    ResetSettings,
     /// Cart Studio's pictures for a cart: the real label and the logo.
     StudioArt { uri: String, real: Option<Vec<u8>>, logo: Option<Vec<u8>>, kind: i32, name: String },
     // Android announces network return; only wake the HTTP retry timer.
@@ -548,7 +550,7 @@ enum LcdFrom {
     Pause { row: usize },
 }
 
-const MENU_TEXT: [&str; 151] = [
+const MENU_TEXT: [&str; 152] = [
     "MENU",                             // 0
     "Library",                          // 1
     "Cart Studio",                      // 2
@@ -700,6 +702,7 @@ const MENU_TEXT: [&str; 151] = [
     "PS1 Memory Card 2",                  // 148
     "Curvature",                          // 149
     "Redo All Labels",                    // 150
+    "Reset to Fresh Install",             // 151, Settings
 ];
 /// MENU_TEXT's Sensitivity row (tilt and gyro games).
 const SENSITIVITY_TEXT: usize = 143;
@@ -1051,7 +1054,8 @@ fn bezel_value(bezel: crate::settings::Bezel) -> usize {
 /// Gameplay page labels and the Settings keys they change, in row order.
 /// Settings: General, Systems, Controls, Gameplay, Emulation, Status Bar.
 // General, Systems, Gameplay, Emulation, Controls, Status Bar.
-const SETTINGS_ROWS: [usize; 6] = [81, 117, 33, 49, 125, 58];
+// Reset to Fresh Install last (Andrew, 2026-11-27): Android asks first.
+const SETTINGS_ROWS: [usize; 7] = [81, 117, 33, 49, 125, 58, 151];
 
 /// X/Y Buttons (38, key 7) moved to Systems > Controls (X / Y), where its
 /// old value is the default until a system or game chooses.
@@ -1454,6 +1458,15 @@ fn wallpaper_pixels(root: Option<&Path>, selection: &crate::settings::WallpaperP
     }
 }
 
+/// The device the fresh-install defaults are chosen for.
+fn this_device(size: (u32, u32)) -> crate::settings::Device {
+    crate::settings::Device {
+        konkr: is_konkr(),
+        retroid_pocket_classic: RPC_DEFAULT_RESPONSIVE.load(Ordering::Acquire),
+        three_two: crate::settings::Device::is_three_two(size),
+    }
+}
+
 impl Engine {
     fn new(library_version: u64, library: Option<&[RomEntry]>) -> Result<Self, String> {
         let size = panel_size();
@@ -1465,11 +1478,7 @@ impl Engine {
         // The slot bars and bezels decode on worker threads while GL starts.
         let start_pixels = start_pixels();
         let mut gpu = Compositor::new(&AndroidSurface { size }).map_err(|e| e.to_string())?;
-        let device = crate::settings::Device {
-            konkr: is_konkr(),
-            retroid_pocket_classic: RPC_DEFAULT_RESPONSIVE.load(Ordering::Acquire),
-            three_two: crate::settings::Device::is_three_two(size),
-        };
+        let device = this_device(size);
         let settings = PATHS.lock().unwrap_or_else(|e| e.into_inner())
             .as_ref().map(|(root, _)| {
                 if Settings::is_fresh(root) { Settings::seed_fresh_install(root); }
@@ -3378,6 +3387,7 @@ impl Engine {
             }
             Input::StudioArt { uri, real, logo, kind, name } => self.studio_art(uri, real, logo, kind, name),
             Input::ReloadCartLabel { uri } => self.reload_cart_label(&uri),
+            Input::ResetSettings => self.reset_to_fresh_install(),
             Input::ExternalReturn => {
                 if self.external_pending {
                     self.external_pending = false;
@@ -4259,6 +4269,12 @@ impl Engine {
                                     3 => self.overlay = ShelfOverlay::EmulationSettings { row: 0 },
                                     4 => self.overlay = ShelfOverlay::ControlsSettings { row: 0 },
                                     5 => self.overlay = ShelfOverlay::InterfaceSettings { row: 0 },
+                                    6 => {
+                                        // Android asks before anything changes.
+                                        UI_ACTION.lock().unwrap_or_else(|e| e.into_inner())
+                                            .push_back(51);
+                                        self.overlay = ShelfOverlay::None;
+                                    }
                                     _ => return,
                                 },
                                 97 => self.overlay = ShelfOverlay::Menu { row: 4 },
@@ -5963,6 +5979,23 @@ impl Engine {
         FF_AUDIO_ENABLED.store(globals.ff_sound,Ordering::Release);
         self.reset_time_controls();
         AUDIO.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+    /// Settings > Reset to Fresh Install. The new settings are saved before
+    /// Android restarts slot. (UI action 52), which loads them like a fresh
+    /// start: the wallpaper, shaders, cores and sizes all come up anew.
+    fn reset_to_fresh_install(&mut self) {
+        if self.game.is_some() {
+            return;
+        }
+        let Some(root) = PATHS.lock().unwrap_or_else(|e| e.into_inner())
+            .as_ref().map(|(root, _)| root.clone()) else { return };
+        match Settings::reset_to_fresh_install(&root, this_device(panel_size()), &self.settings) {
+            Ok(fresh) => {
+                self.settings = fresh;
+                UI_ACTION.lock().unwrap_or_else(|e| e.into_inner()).push_back(52);
+            }
+            Err(error) => set_error_message("Couldn't reset the settings.", &error),
+        }
     }
     fn persist_settings(&self) {
         if let Some((root, _)) = PATHS.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
